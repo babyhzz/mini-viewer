@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "create-skill": {
+      "source": "siviter-xyz/dot-agent",
+      "sourceType": "github",
+      "computedHash": "117464d5a01acfbf3c7d3939a90df78e2196025f545bdded831aa4aa63a80080"
+    },
+    "git-commit": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "2607fc60629b82b257136dd2a7a373f0a4466c0b49df7746d845d59313c99b21"
+    },
+    "react-expert": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "computedHash": "bdb36dac501c9ababfd90c3bf1b5e5653488bb63027aeefff8a6c284f10a75f6"
+    }
+  }
+}
