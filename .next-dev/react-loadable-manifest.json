@@ -1,0 +1,36 @@
+{
+  "node_modules/@cornerstonejs/dicom-image-loader/dist/esm/shared/decoders/decodeJPEGBaseline12Bit-js.js -> ../../codecs/jpeg": {
+    "id": "node_modules/@cornerstonejs/dicom-image-loader/dist/esm/shared/decoders/decodeJPEGBaseline12Bit-js.js -> ../../codecs/jpeg",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_cornerstonejs_dicom-image-loader_dist_esm_codecs_jpeg_js.js"
+    ]
+  },
+  "node_modules/@cornerstonejs/dicom-image-loader/dist/esm/shared/decoders/decodeJPEGLossless.js -> jpeg-lossless-decoder-js": {
+    "id": "node_modules/@cornerstonejs/dicom-image-loader/dist/esm/shared/decoders/decodeJPEGLossless.js -> jpeg-lossless-decoder-js",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_jpeg-lossless-decoder-js_release_lossless_js.js"
+    ]
+  },
+  "src/lib/cornerstone/init.ts -> @/lib/tools/cornerstone-tool-adapter": {
+    "id": "src/lib/cornerstone/init.ts -> @/lib/tools/cornerstone-tool-adapter",
+    "files": []
+  },
+  "src/lib/cornerstone/init.ts -> @cornerstonejs/core": {
+    "id": "src/lib/cornerstone/init.ts -> @cornerstonejs/core",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_cornerstonejs_core_dist_esm_index_js.js"
+    ]
+  },
+  "src/lib/cornerstone/init.ts -> @cornerstonejs/dicom-image-loader": {
+    "id": "src/lib/cornerstone/init.ts -> @cornerstonejs/dicom-image-loader",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_cornerstonejs_dicom-image-loader_dist_esm_index_js.js"
+    ]
+  },
+  "src/lib/cornerstone/init.ts -> @cornerstonejs/tools": {
+    "id": "src/lib/cornerstone/init.ts -> @cornerstonejs/tools",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_cornerstonejs_tools_dist_esm_index_js.js"
+    ]
+  }
+}

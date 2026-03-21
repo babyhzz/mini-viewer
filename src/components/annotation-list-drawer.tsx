@@ -1,0 +1,127 @@
+"use client";
+
+import { DeleteOutlined } from "@ant-design/icons";
+import { Button, Drawer, Empty, Tag } from "antd";
+
+import type { ViewportAnnotationEntry } from "@/lib/tools/cornerstone-tool-adapter";
+
+interface AnnotationListDrawerProps {
+  open: boolean;
+  annotations: ViewportAnnotationEntry[];
+  onClose: () => void;
+  onSelectAnnotation: (annotationUID: string) => void;
+  onDeleteAnnotation: (annotationUID: string) => void;
+  onClearAll: () => void;
+}
+
+export function AnnotationListDrawer({
+  open,
+  annotations,
+  onClose,
+  onSelectAnnotation,
+  onDeleteAnnotation,
+  onClearAll,
+}: AnnotationListDrawerProps) {
+  const selectedCount = annotations.filter((item) => item.isSelected).length;
+
+  return open ? (
+    <Drawer
+      rootClassName="annotation-list-drawer"
+      title="图元列表"
+      placement="right"
+      open={open}
+      width={420}
+      onClose={onClose}
+      footer={
+        <div className="annotation-list-footer">
+          <span className="annotation-list-footer-copy">
+            当前列表展示本视口中的测量与 ROI 图元，可直接定位和删除。
+          </span>
+          <div className="annotation-list-footer-actions">
+            <Button
+              danger
+              disabled={!annotations.length}
+              data-testid="annotation-list-clear-all"
+              onClick={onClearAll}
+            >
+              清空全部
+            </Button>
+            <Button data-testid="annotation-list-close" onClick={onClose}>
+              关闭
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <div className="annotation-list-summary" data-testid="annotation-list-drawer">
+        <div>
+          <div className="annotation-list-kicker">Current Viewport</div>
+          <h3>图元总览</h3>
+          <p>点击列表项可切换当前选中图元，右侧按钮可直接删除单条。</p>
+        </div>
+        <div className="annotation-list-summary-tags">
+          <Tag bordered={false}>总计 {annotations.length}</Tag>
+          <Tag bordered={false}>已选 {selectedCount}</Tag>
+        </div>
+      </div>
+
+      {annotations.length ? (
+        <div className="annotation-list-items">
+          {annotations.map((annotation) => (
+            <div
+              key={annotation.annotationUID}
+              className={`annotation-list-item${annotation.isSelected ? " is-selected" : ""}`}
+              data-testid="annotation-list-item"
+              data-annotation-uid={annotation.annotationUID}
+              data-selected={String(annotation.isSelected)}
+            >
+              <button
+                type="button"
+                className="annotation-list-item-main"
+                data-testid={`annotation-list-select-${annotation.annotationUID}`}
+                onClick={() => onSelectAnnotation(annotation.annotationUID)}
+              >
+                <div className="annotation-list-item-head">
+                  <div className="annotation-list-item-title">
+                    <Tag className="annotation-list-item-tag" bordered={false}>
+                      {annotation.toolShortLabel}
+                    </Tag>
+                    <strong>{annotation.toolLabel}</strong>
+                    {annotation.isSelected ? (
+                      <span className="annotation-list-item-badge">已选中</span>
+                    ) : null}
+                  </div>
+                  <span className="annotation-list-item-frame">
+                    {annotation.frameLabel}
+                  </span>
+                </div>
+                <div className="annotation-list-item-description">
+                  {annotation.description}
+                </div>
+                <div className="annotation-list-item-uid">
+                  {annotation.annotationUID}
+                </div>
+              </button>
+              <button
+                type="button"
+                className="annotation-list-item-delete"
+                aria-label={`删除 ${annotation.toolLabel}`}
+                data-testid={`annotation-list-delete-${annotation.annotationUID}`}
+                onClick={() => onDeleteAnnotation(annotation.annotationUID)}
+              >
+                <DeleteOutlined />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="annotation-list-empty" data-testid="annotation-list-empty">
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="当前还没有图元"
+          />
+        </div>
+      )}
+    </Drawer>
+  ) : null;
+}
