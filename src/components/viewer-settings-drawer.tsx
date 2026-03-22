@@ -3,10 +3,12 @@
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
+  DownOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RightOutlined,
   SaveOutlined,
 } from "@ant-design/icons";
 import {
@@ -20,6 +22,7 @@ import {
   InputNumber,
   Modal,
   Select,
+  Segmented,
   Switch,
   Tag,
 } from "antd";
@@ -35,8 +38,17 @@ import {
   OVERLAY_TAG_DEFINITIONS,
   VIEWPORT_CORNER_LABELS,
 } from "@/lib/settings/overlay";
+import {
+  areToolbarShortcutBindingsEqual,
+  formatToolbarShortcutBinding,
+  getToolbarShortcutBindingFromKeyboardEvent,
+  TOOLBAR_SHORTCUT_CATEGORY_LABELS,
+  TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS,
+} from "@/lib/settings/shortcuts";
 import type {
   OverlayCornerItemConfig,
+  ToolbarShortcutBinding,
+  ToolbarShortcutCommandId,
   ViewerSettings,
   ViewportCorner,
 } from "@/types/settings";
@@ -54,12 +66,21 @@ interface EditingTarget {
 }
 
 const OVERLAY_SECTION_ID = "overlay";
+const SHORTCUTS_SECTION_ID = "shortcuts";
+type ShortcutCategoryId = keyof typeof TOOLBAR_SHORTCUT_CATEGORY_LABELS;
+type ShortcutFilter = "all" | "customized" | "unassigned";
 const VIEWPORT_CORNERS: ViewportCorner[] = [
   "topLeft",
   "topRight",
   "bottomLeft",
   "bottomRight",
 ];
+const DEFAULT_SHORTCUT_GROUP_COLLAPSED: Record<ShortcutCategoryId, boolean> = {
+  basic: false,
+  measure: true,
+  roi: true,
+  actions: false,
+};
 
 function replaceCornerItems(
   settings: ViewerSettings,
@@ -76,6 +97,44 @@ function replaceCornerItems(
       },
     },
   };
+}
+
+function replaceToolbarShortcuts(
+  settings: ViewerSettings,
+  bindings: ViewerSettings["toolbarShortcuts"]["bindings"],
+) {
+  return {
+    ...settings,
+    toolbarShortcuts: {
+      ...settings.toolbarShortcuts,
+      bindings,
+    },
+  };
+}
+
+function assignToolbarShortcutBinding(
+  settings: ViewerSettings,
+  commandId: ToolbarShortcutCommandId,
+  binding: ToolbarShortcutBinding | null,
+) {
+  const nextBindings = {
+    ...settings.toolbarShortcuts.bindings,
+  };
+
+  if (binding) {
+    for (const definition of TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS) {
+      if (definition.id === commandId) {
+        continue;
+      }
+
+      if (areToolbarShortcutBindingsEqual(nextBindings[definition.id], binding)) {
+        nextBindings[definition.id] = null;
+      }
+    }
+  }
+
+  nextBindings[commandId] = binding;
+  return replaceToolbarShortcuts(settings, nextBindings);
 }
 
 function getTagDefinition(tagKey: OverlayCornerItemConfig["tagKey"]) {
@@ -99,23 +158,48 @@ export function ViewerSettingsDrawer({
   onSave,
 }: ViewerSettingsDrawerProps) {
   const defaultSettings = useMemo(() => createDefaultViewerSettings(), []);
+  const shortcutGroups = useMemo(() => {
+    return (
+      Object.entries(TOOLBAR_SHORTCUT_CATEGORY_LABELS) as Array<
+        [ShortcutCategoryId, string]
+      >
+    ).map(
+      ([categoryId, label]) => ({
+        categoryId,
+        label,
+        items: TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.filter(
+          (definition) => definition.categoryId === categoryId,
+        ),
+      }),
+    );
+  }, []);
   const [draftSettings, setDraftSettings] = useState<ViewerSettings>(() =>
     cloneViewerSettings(settings),
   );
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editingTarget, setEditingTarget] = useState<EditingTarget | null>(null);
+  const [recordingShortcutId, setRecordingShortcutId] =
+    useState<ToolbarShortcutCommandId | null>(null);
+  const [shortcutFilter, setShortcutFilter] = useState<ShortcutFilter>("all");
+  const [collapsedShortcutGroups, setCollapsedShortcutGroups] = useState<
+    Record<ShortcutCategoryId, boolean>
+  >(() => ({ ...DEFAULT_SHORTCUT_GROUP_COLLAPSED }));
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
     if (!open) {
       setEditingTarget(null);
+      setRecordingShortcutId(null);
       return;
     }
 
     setDraftSettings(cloneViewerSettings(settings));
     setSaveError(null);
     setEditingTarget(null);
+    setRecordingShortcutId(null);
+    setShortcutFilter("all");
+    setCollapsedShortcutGroups({ ...DEFAULT_SHORTCUT_GROUP_COLLAPSED });
   }, [open, settings]);
 
   const hasChanges = JSON.stringify(draftSettings) !== JSON.stringify(settings);
@@ -134,6 +218,159 @@ export function ViewerSettingsDrawer({
       setEditingTarget(null);
     }
   }, [editingItem, editingTarget]);
+
+  useEffect(() => {
+    if (!open || !recordingShortcutId) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) {
+        event.preventDefault();
+        return;
+      }
+
+      const hasModifierKey =
+        event.ctrlKey || event.altKey || event.shiftKey || event.metaKey;
+
+      if (event.key === "Escape" && !hasModifierKey) {
+        event.preventDefault();
+        setRecordingShortcutId(null);
+        return;
+      }
+
+      if (
+        (event.key === "Backspace" || event.key === "Delete") &&
+        !hasModifierKey
+      ) {
+        event.preventDefault();
+        setDraftSettings((currentSettings) =>
+          assignToolbarShortcutBinding(
+            currentSettings,
+            recordingShortcutId,
+            null,
+          ),
+        );
+        setRecordingShortcutId(null);
+        return;
+      }
+
+      const binding = getToolbarShortcutBindingFromKeyboardEvent(event);
+
+      if (!binding) {
+        return;
+      }
+
+      event.preventDefault();
+      setDraftSettings((currentSettings) =>
+        assignToolbarShortcutBinding(
+          currentSettings,
+          recordingShortcutId,
+          binding,
+        ),
+      );
+      setRecordingShortcutId(null);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [open, recordingShortcutId]);
+
+  const shortcutSummary = useMemo(() => {
+    return TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.reduce(
+      (summary, definition) => {
+        const binding = draftSettings.toolbarShortcuts.bindings[definition.id];
+        const defaultBinding =
+          defaultSettings.toolbarShortcuts.bindings[definition.id];
+
+        if (!binding) {
+          summary.unassigned += 1;
+        }
+
+        if (!areToolbarShortcutBindingsEqual(binding, defaultBinding)) {
+          summary.customized += 1;
+        }
+
+        return summary;
+      },
+      {
+        total: TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.length,
+        customized: 0,
+        unassigned: 0,
+      },
+    );
+  }, [defaultSettings, draftSettings.toolbarShortcuts.bindings]);
+
+  const filteredShortcutGroups = useMemo(() => {
+    return shortcutGroups
+      .map((group) => {
+        const items = group.items.filter((definition) => {
+          const binding = draftSettings.toolbarShortcuts.bindings[definition.id];
+          const defaultBinding =
+            defaultSettings.toolbarShortcuts.bindings[definition.id];
+
+          if (shortcutFilter === "customized") {
+            return !areToolbarShortcutBindingsEqual(binding, defaultBinding);
+          }
+
+          if (shortcutFilter === "unassigned") {
+            return binding == null;
+          }
+
+          return true;
+        });
+
+        const customizedCount = group.items.filter((definition) => {
+          const binding = draftSettings.toolbarShortcuts.bindings[definition.id];
+          const defaultBinding =
+            defaultSettings.toolbarShortcuts.bindings[definition.id];
+
+          return !areToolbarShortcutBindingsEqual(binding, defaultBinding);
+        }).length;
+        const unassignedCount = group.items.filter(
+          (definition) =>
+            draftSettings.toolbarShortcuts.bindings[definition.id] == null,
+        ).length;
+
+        return {
+          ...group,
+          items,
+          visibleCount: items.length,
+          totalCount: group.items.length,
+          customizedCount,
+          unassignedCount,
+        };
+      })
+      .filter((group) => group.visibleCount > 0);
+  }, [
+    defaultSettings,
+    draftSettings.toolbarShortcuts.bindings,
+    shortcutFilter,
+    shortcutGroups,
+  ]);
+
+  useEffect(() => {
+    if (shortcutFilter === "all" || !filteredShortcutGroups.length) {
+      return;
+    }
+
+    setCollapsedShortcutGroups((currentState) => {
+      let hasChanges = false;
+      const nextState = { ...currentState };
+
+      for (const group of filteredShortcutGroups) {
+        if (nextState[group.categoryId]) {
+          nextState[group.categoryId] = false;
+          hasChanges = true;
+        }
+      }
+
+      return hasChanges ? nextState : currentState;
+    });
+  }, [filteredShortcutGroups, shortcutFilter]);
 
   const handleScrollToSection = (sectionId: string) => {
     const element = sectionRefs.current[sectionId];
@@ -207,6 +444,44 @@ export function ViewerSettingsDrawer({
 
       return replaceCornerItems(currentSettings, corner, items);
     });
+  };
+
+  const handleRecordShortcut = (commandId: ToolbarShortcutCommandId) => {
+    setEditingTarget(null);
+    setRecordingShortcutId((currentId) =>
+      currentId === commandId ? null : commandId,
+    );
+  };
+
+  const handleClearShortcut = (commandId: ToolbarShortcutCommandId) => {
+    setDraftSettings((currentSettings) =>
+      assignToolbarShortcutBinding(currentSettings, commandId, null),
+    );
+
+    if (recordingShortcutId === commandId) {
+      setRecordingShortcutId(null);
+    }
+  };
+
+  const handleResetShortcut = (commandId: ToolbarShortcutCommandId) => {
+    setDraftSettings((currentSettings) =>
+      assignToolbarShortcutBinding(
+        currentSettings,
+        commandId,
+        defaultSettings.toolbarShortcuts.bindings[commandId],
+      ),
+    );
+
+    if (recordingShortcutId === commandId) {
+      setRecordingShortcutId(null);
+    }
+  };
+
+  const handleToggleShortcutGroup = (categoryId: ShortcutCategoryId) => {
+    setCollapsedShortcutGroups((currentState) => ({
+      ...currentState,
+      [categoryId]: !currentState[categoryId],
+    }));
   };
 
   const handleSave = async () => {
@@ -287,7 +562,7 @@ export function ViewerSettingsDrawer({
             <aside className="viewer-settings-nav">
               <div className="viewer-settings-nav-header">
                 <h3>快捷导航</h3>
-                <p>当前面板先聚焦四角信息，点击后定位到统一配置块。</p>
+                <p>按配置主题拆分导航，当前支持四角信息和工具栏快捷键。</p>
               </div>
               <div className="viewer-settings-nav-list">
                 <button
@@ -296,6 +571,13 @@ export function ViewerSettingsDrawer({
                   onClick={() => handleScrollToSection(OVERLAY_SECTION_ID)}
                 >
                   四角信息
+                </button>
+                <button
+                  type="button"
+                  className="viewer-settings-nav-button"
+                  onClick={() => handleScrollToSection(SHORTCUTS_SECTION_ID)}
+                >
+                  快捷键
                 </button>
               </div>
             </aside>
@@ -405,12 +687,13 @@ export function ViewerSettingsDrawer({
                                       icon={<EditOutlined />}
                                       title="编辑"
                                       data-testid={`viewer-settings-edit-${corner}-${itemIndex}`}
-                                      onClick={() =>
+                                      onClick={() => {
+                                        setRecordingShortcutId(null);
                                         setEditingTarget({
                                           corner,
                                           itemId: item.id,
-                                        })
-                                      }
+                                        });
+                                      }}
                                     />
                                     <Button
                                       size="small"
@@ -444,6 +727,227 @@ export function ViewerSettingsDrawer({
                       </Card>
                     );
                   })}
+                </div>
+              </section>
+
+              <section
+                ref={(element) => {
+                  sectionRefs.current[SHORTCUTS_SECTION_ID] = element;
+                }}
+                className="viewer-settings-section"
+                data-testid="viewer-settings-shortcuts-section"
+              >
+                <div className="viewer-settings-section-head">
+                  <div>
+                    <div className="viewer-settings-section-kicker">
+                      Shortcut Configuration
+                    </div>
+                    <h2>快捷键</h2>
+                    <p>
+                      为常用工具栏命令配置快捷键。点击录制后直接按下组合键即可保存，
+                      <code>Esc</code> 取消，<code>Backspace</code> 或
+                      <code>Delete</code> 清空。重复绑定会自动转移到最新命令。
+                    </p>
+                  </div>
+                </div>
+
+                <div className="viewer-settings-summary-row">
+                  <Tag className="viewer-settings-summary-tag">
+                    共 {TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.length} 个命令
+                  </Tag>
+                  <Tag className="viewer-settings-summary-tag">
+                    支持单键和组合键
+                  </Tag>
+                  <Tag className="viewer-settings-summary-tag">
+                    保存后立即生效
+                  </Tag>
+                </div>
+
+                <div className="viewer-settings-shortcut-toolbar">
+                  <Segmented<ShortcutFilter>
+                    size="small"
+                    className="viewer-settings-shortcut-filter"
+                    value={shortcutFilter}
+                    data-testid="viewer-settings-shortcut-filter"
+                    onChange={(value) => setShortcutFilter(value)}
+                    options={[
+                      {
+                        label: `全部 ${shortcutSummary.total}`,
+                        value: "all",
+                      },
+                      {
+                        label: `已修改 ${shortcutSummary.customized}`,
+                        value: "customized",
+                      },
+                      {
+                        label: `未绑定 ${shortcutSummary.unassigned}`,
+                        value: "unassigned",
+                      },
+                    ]}
+                  />
+                  <span className="viewer-settings-shortcut-toolbar-copy">
+                    组内可折叠；悬停命令名称可查看用途说明。
+                  </span>
+                </div>
+
+                {recordingShortcutId ? (
+                  <Alert
+                    type="info"
+                    showIcon
+                    className="viewer-settings-shortcut-capture-alert"
+                    message={`正在录制 ${TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.find((definition) => definition.id === recordingShortcutId)?.label ?? "快捷键"}`}
+                    description="请按下要绑定的组合键。Esc 取消，Backspace/Delete 清空当前绑定。"
+                  />
+                ) : null}
+
+                <div className="viewer-settings-shortcut-groups">
+                  {filteredShortcutGroups.length ? (
+                    filteredShortcutGroups.map((group) => {
+                      const isCollapsed = collapsedShortcutGroups[group.categoryId];
+
+                      return (
+                        <Card
+                          key={group.categoryId}
+                          size="small"
+                          className="viewer-settings-shortcut-card"
+                          data-testid={`viewer-settings-shortcut-group-${group.categoryId}`}
+                        >
+                          <button
+                            type="button"
+                            className="viewer-settings-shortcut-group-toggle"
+                            aria-expanded={!isCollapsed}
+                            onClick={() =>
+                              handleToggleShortcutGroup(group.categoryId)
+                            }
+                          >
+                            <span className="viewer-settings-shortcut-group-copy">
+                              <span className="viewer-settings-corner-title">
+                                {group.label}
+                              </span>
+                              <span className="viewer-settings-corner-subtitle">
+                                {group.visibleCount === group.totalCount
+                                  ? `${group.totalCount} 项`
+                                  : `${group.visibleCount} / ${group.totalCount} 项`}
+                                {group.customizedCount
+                                  ? ` · ${group.customizedCount} 已修改`
+                                  : ""}
+                                {group.unassignedCount
+                                  ? ` · ${group.unassignedCount} 未绑定`
+                                  : ""}
+                              </span>
+                            </span>
+                            <span className="viewer-settings-shortcut-group-icon">
+                              {isCollapsed ? <RightOutlined /> : <DownOutlined />}
+                            </span>
+                          </button>
+
+                          {isCollapsed ? null : (
+                            <div className="viewer-settings-shortcut-list">
+                              {group.items.map((definition) => {
+                                const binding =
+                                  draftSettings.toolbarShortcuts.bindings[
+                                    definition.id
+                                  ];
+                                const defaultBinding =
+                                  defaultSettings.toolbarShortcuts.bindings[
+                                    definition.id
+                                  ];
+                                const isRecording =
+                                  recordingShortcutId === definition.id;
+                                const differsFromDefault =
+                                  !areToolbarShortcutBindingsEqual(
+                                    binding,
+                                    defaultBinding,
+                                  );
+
+                                return (
+                                  <div
+                                    key={definition.id}
+                                    className={`viewer-settings-shortcut-item${isRecording ? " is-recording" : ""}`}
+                                  >
+                                    <div className="viewer-settings-shortcut-item-main">
+                                      <span
+                                        className="viewer-settings-shortcut-item-title"
+                                        title={definition.description}
+                                      >
+                                        {definition.label}
+                                      </span>
+                                      <span className="viewer-settings-shortcut-item-default">
+                                        默认{" "}
+                                        {formatToolbarShortcutBinding(
+                                          defaultBinding,
+                                        )}
+                                      </span>
+                                      {differsFromDefault ? (
+                                        <Tag className="viewer-settings-shortcut-state-tag is-customized">
+                                          已改
+                                        </Tag>
+                                      ) : null}
+                                      {!binding ? (
+                                        <Tag className="viewer-settings-shortcut-state-tag">
+                                          未绑
+                                        </Tag>
+                                      ) : null}
+                                    </div>
+
+                                    <div className="viewer-settings-shortcut-item-actions">
+                                      <Button
+                                        size="small"
+                                        type={isRecording ? "primary" : "default"}
+                                        className="viewer-settings-shortcut-button"
+                                        data-testid={`viewer-settings-shortcut-record-${definition.id}`}
+                                        onClick={() =>
+                                          handleRecordShortcut(definition.id)
+                                        }
+                                      >
+                                        {isRecording
+                                          ? "请按快捷键…"
+                                          : formatToolbarShortcutBinding(binding)}
+                                      </Button>
+                                      <Button
+                                        size="small"
+                                        type="text"
+                                        icon={<ReloadOutlined />}
+                                        className="viewer-settings-shortcut-icon-button"
+                                        data-testid={`viewer-settings-shortcut-reset-${definition.id}`}
+                                        aria-label={`恢复 ${definition.label} 默认绑定`}
+                                        title="恢复默认"
+                                        disabled={!differsFromDefault}
+                                        onClick={() =>
+                                          handleResetShortcut(definition.id)
+                                        }
+                                      />
+                                      <Button
+                                        size="small"
+                                        type="text"
+                                        danger
+                                        icon={<DeleteOutlined />}
+                                        className="viewer-settings-shortcut-icon-button"
+                                        data-testid={`viewer-settings-shortcut-clear-${definition.id}`}
+                                        aria-label={`清空 ${definition.label} 绑定`}
+                                        title="清空绑定"
+                                        disabled={!binding}
+                                        onClick={() =>
+                                          handleClearShortcut(definition.id)
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })
+                  ) : (
+                    <div className="viewer-settings-shortcut-empty">
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="当前筛选下没有快捷键项"
+                      />
+                    </div>
+                  )}
                 </div>
               </section>
             </div>

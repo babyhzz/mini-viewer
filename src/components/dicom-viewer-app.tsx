@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LoadingOutlined } from "@ant-design/icons";
 import { Modal, Spin } from "antd";
 
@@ -14,6 +14,11 @@ import {
   createDefaultViewerSettings,
   normalizeViewerSettings,
 } from "@/lib/settings/overlay";
+import {
+  findToolbarShortcutCommandId,
+  getToolbarShortcutBindingFromKeyboardEvent,
+  isToolbarShortcutToolCommand,
+} from "@/lib/settings/shortcuts";
 import type { ViewportAnnotationCommand } from "@/lib/tools/cornerstone-tool-adapter";
 import {
   createDefaultViewportToolGroupSelections,
@@ -26,9 +31,13 @@ import {
   DEFAULT_VIEWPORT_LAYOUT_ID,
   getViewportLayoutDefinition,
   getViewportLayoutSlotIds,
-  getViewportSlotLabel,
   type ViewportLayoutId,
 } from "@/lib/viewports/layouts";
+import {
+  DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID,
+  getViewportImageLayoutDefinition,
+  type ViewportImageLayoutId,
+} from "@/lib/viewports/image-layouts";
 import type {
   DicomHierarchyResponse,
   DicomSeriesNode,
@@ -41,6 +50,8 @@ interface SelectedSeries {
   study: DicomStudyNode;
   series: DicomSeriesNode;
 }
+
+type ViewportCellSelection = "all" | number;
 
 type ViewportAnnotationCommandInput =
   | {
@@ -57,6 +68,18 @@ type ViewportAnnotationCommandInput =
 
 function buildSeriesKey(studyId: string, seriesId: string) {
   return `${studyId}::${seriesId}`;
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
 }
 
 function createEmptyViewportAnnotationsState(): ViewportAnnotationsState {
@@ -101,6 +124,33 @@ function alignViewportAnnotationStateMap(
     (nextState, viewportId) => {
       nextState[viewportId] =
         previousState[viewportId] ?? createEmptyViewportAnnotationsState();
+      return nextState;
+    },
+    {},
+  );
+}
+
+function alignViewportImageLayoutState(
+  viewportIds: string[],
+  previousState: Record<string, ViewportImageLayoutId>,
+) {
+  return viewportIds.reduce<Record<string, ViewportImageLayoutId>>(
+    (nextState, viewportId) => {
+      nextState[viewportId] =
+        previousState[viewportId] ?? DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID;
+      return nextState;
+    },
+    {},
+  );
+}
+
+function alignViewportCellSelectionState(
+  viewportIds: string[],
+  previousState: Record<string, ViewportCellSelection>,
+) {
+  return viewportIds.reduce<Record<string, ViewportCellSelection>>(
+    (nextState, viewportId) => {
+      nextState[viewportId] = previousState[viewportId] ?? "all";
       return nextState;
     },
     {},
@@ -172,6 +222,8 @@ export function DicomViewerApp() {
   const [viewportLayoutId, setViewportLayoutId] = useState<ViewportLayoutId>(
     DEFAULT_VIEWPORT_LAYOUT_ID,
   );
+  const [maximizedViewportId, setMaximizedViewportId] =
+    useState<string | null>(null);
   const [selectedViewportId, setSelectedViewportId] =
     useState<string>("viewport-1");
   const [viewportSeriesAssignments, setViewportSeriesAssignments] = useState<
@@ -188,24 +240,66 @@ export function DicomViewerApp() {
     useState<ViewportAnnotationCommand | null>(null);
   const [viewportAnnotationsStateById, setViewportAnnotationsStateById] =
     useState<Record<string, ViewportAnnotationsState>>({});
+  const [viewportImageLayoutIdById, setViewportImageLayoutIdById] = useState<
+    Record<string, ViewportImageLayoutId>
+  >({});
+  const [viewportCellSelectionById, setViewportCellSelectionById] = useState<
+    Record<string, ViewportCellSelection>
+  >({});
   const [annotationListOpen, setAnnotationListOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const viewportLayout = getViewportLayoutDefinition(viewportLayoutId);
   const viewportIds = getViewportLayoutSlotIds(viewportLayoutId);
+  const canMaximizeViewport = viewportIds.length > 1;
+  const isViewportMaximized =
+    canMaximizeViewport &&
+    Boolean(maximizedViewportId) &&
+    viewportIds.includes(maximizedViewportId ?? "");
+  const effectiveViewportLayoutId: ViewportLayoutId = isViewportMaximized
+    ? "1x1"
+    : viewportLayoutId;
+  const effectiveViewportLayout = getViewportLayoutDefinition(
+    effectiveViewportLayoutId,
+  );
+  const visibleViewportIds =
+    isViewportMaximized && maximizedViewportId
+      ? [maximizedViewportId]
+      : viewportIds;
   const orderedSeriesEntries = getOrderedSeriesEntries(hierarchy);
   const seriesEntryMap = new Map(
     orderedSeriesEntries.map((entry) => [entry.key, entry] as const),
   );
-  const activeSeriesEntry =
-    seriesEntryMap.get(viewportSeriesAssignments[selectedViewportId] ?? "") ?? null;
   const activeViewportAnnotationsState =
     viewportAnnotationsStateById[selectedViewportId] ??
     createEmptyViewportAnnotationsState();
   const activeViewportInvertEnabled =
     viewportInvertEnabled[selectedViewportId] ?? false;
-  const activeViewportIndex = Math.max(0, viewportIds.indexOf(selectedViewportId));
-  const activeViewportLabel = getViewportSlotLabel(activeViewportIndex);
+  const activeViewportImageLayoutId =
+    viewportImageLayoutIdById[selectedViewportId] ??
+    DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID;
+  const activeViewportImageLayout = getViewportImageLayoutDefinition(
+    activeViewportImageLayoutId,
+  );
+  const activeViewportHasMontageLayout = activeViewportImageLayout.cellCount > 1;
+
+  const handleViewportSelect = useCallback((viewportId: string) => {
+    setSelectedViewportId(viewportId);
+    setViewportCellSelectionById((previous) => ({
+      ...previous,
+      [viewportId]: "all",
+    }));
+  }, []);
+
+  const handleViewportCellSelect = useCallback(
+    (viewportId: string, cellIndex: number) => {
+      setSelectedViewportId(viewportId);
+      setViewportCellSelectionById((previous) => ({
+        ...previous,
+        [viewportId]: cellIndex,
+      }));
+    },
+    [],
+  );
 
   const queueAnnotationCommand = (command: ViewportAnnotationCommandInput) => {
     const targetViewportKey =
@@ -219,37 +313,81 @@ export function DicomViewerApp() {
     } as ViewportAnnotationCommand);
   };
 
-  const handleViewportToolChange = (tool: ViewportTool) => {
-    setActiveViewportTool(tool);
+  const handleViewportToolChange = useCallback(
+    (tool: ViewportTool) => {
+      if (activeViewportHasMontageLayout && tool !== "select") {
+        setViewportImageLayoutIdById((previous) => ({
+          ...previous,
+          [selectedViewportId]: DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID,
+        }));
+      }
 
-    const toolGroupId = getViewportToolGroupId(tool);
+      setActiveViewportTool(tool);
 
-    if (!toolGroupId) {
-      return;
-    }
+      const toolGroupId = getViewportToolGroupId(tool);
 
-    setViewportToolGroupSelections((previous) => ({
-      ...previous,
-      [toolGroupId]: tool,
-    }));
-  };
+      if (!toolGroupId) {
+        return;
+      }
+
+      setViewportToolGroupSelections((previous) => ({
+        ...previous,
+        [toolGroupId]: tool,
+      }));
+    },
+    [activeViewportHasMontageLayout, selectedViewportId],
+  );
 
   const handleViewportLayoutChange = (layoutId: ViewportLayoutId) => {
+    setMaximizedViewportId(null);
     setViewportLayoutId(layoutId);
   };
 
-  const handleViewportAction = (action: ViewportAction) => {
-    if (action === "invert") {
-      setViewportInvertEnabled((previous) => ({
-        ...previous,
-        [selectedViewportId]: !(previous[selectedViewportId] ?? false),
-      }));
+  const handleViewportImageLayoutChange = (layoutId: ViewportImageLayoutId) => {
+    setViewportImageLayoutIdById((previous) => ({
+      ...previous,
+      [selectedViewportId]: layoutId,
+    }));
+    setViewportCellSelectionById((previous) => ({
+      ...previous,
+      [selectedViewportId]: "all",
+    }));
 
-      return;
+    if (layoutId !== DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID) {
+      setActiveViewportTool("select");
     }
-
-    setAnnotationListOpen(true);
   };
+
+  const handleViewportToggleMaximize = (viewportId: string) => {
+    handleViewportSelect(viewportId);
+    setMaximizedViewportId((previous) => {
+      if (previous === viewportId) {
+        return null;
+      }
+
+      if (!canMaximizeViewport) {
+        return null;
+      }
+
+      return viewportId;
+    });
+  };
+
+  const handleViewportAction = useCallback(
+    (action: ViewportAction) => {
+      if (action === "invert") {
+        setViewportInvertEnabled((previous) => ({
+          ...previous,
+          [selectedViewportId]: !(previous[selectedViewportId] ?? false),
+        }));
+
+        return;
+      }
+
+      setAnnotationListOpen(true);
+    },
+    [selectedViewportId],
+  );
 
   const handleDeleteSelectedAnnotations = () => {
     if (!activeViewportAnnotationsState.selectedAnnotationUIDs.length) {
@@ -367,6 +505,72 @@ export function DicomViewerApp() {
   }, []);
 
   useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) {
+        return;
+      }
+
+      if (settingsOpen || annotationListOpen) {
+        return;
+      }
+
+      if (document.querySelector(".ant-modal-root .ant-modal-wrap")) {
+        return;
+      }
+
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+
+      const binding = getToolbarShortcutBindingFromKeyboardEvent(event);
+
+      if (!binding) {
+        return;
+      }
+
+      const commandId = findToolbarShortcutCommandId(
+        viewerSettings.toolbarShortcuts.bindings,
+        binding,
+      );
+
+      if (!commandId) {
+        return;
+      }
+
+      if (commandId !== "settings" && !orderedSeriesEntries.length) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (commandId === "settings") {
+        setSettingsOpen(true);
+        return;
+      }
+
+      if (isToolbarShortcutToolCommand(commandId)) {
+        handleViewportToolChange(commandId);
+        return;
+      }
+
+      handleViewportAction(commandId);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [
+    annotationListOpen,
+    handleViewportAction,
+    handleViewportToolChange,
+    orderedSeriesEntries.length,
+    settingsOpen,
+    viewerSettings.toolbarShortcuts.bindings,
+  ]);
+
+  useEffect(() => {
     const nextViewportIds = getViewportLayoutSlotIds(viewportLayoutId);
     const nextOrderedSeriesKeys = getOrderedSeriesEntries(hierarchy).map(
       (entry) => entry.key,
@@ -385,12 +589,29 @@ export function DicomViewerApp() {
     setViewportAnnotationsStateById((previous) =>
       alignViewportAnnotationStateMap(nextViewportIds, previous),
     );
+    setViewportImageLayoutIdById((previous) =>
+      alignViewportImageLayoutState(nextViewportIds, previous),
+    );
+    setViewportCellSelectionById((previous) =>
+      alignViewportCellSelectionState(nextViewportIds, previous),
+    );
     setSelectedViewportId((previous) =>
       nextViewportIds.includes(previous)
         ? previous
         : (nextViewportIds[0] ?? "viewport-1"),
     );
+    setMaximizedViewportId((previous) =>
+      previous && nextViewportIds.includes(previous) ? previous : null,
+    );
   }, [hierarchy, viewportLayoutId]);
+
+  useEffect(() => {
+    if (!activeViewportHasMontageLayout || activeViewportTool === "select") {
+      return;
+    }
+
+    setActiveViewportTool("select");
+  }, [activeViewportHasMontageLayout, activeViewportTool, selectedViewportId]);
 
   if (loading) {
     return (
@@ -468,6 +689,10 @@ export function DicomViewerApp() {
                                 ...previous,
                                 [selectedViewportId]: seriesKey,
                               }));
+                              setViewportCellSelectionById((previous) => ({
+                                ...previous,
+                                [selectedViewportId]: "all",
+                              }));
                               setViewportAnnotationsStateById((previous) => ({
                                 ...previous,
                                 [selectedViewportId]:
@@ -505,7 +730,8 @@ export function DicomViewerApp() {
           <ViewportToolbar
             activeTool={activeViewportTool}
             groupSelections={viewportToolGroupSelections}
-            layoutId={viewportLayoutId}
+            layoutId={effectiveViewportLayoutId}
+            imageLayoutId={activeViewportImageLayoutId}
             invertEnabled={activeViewportInvertEnabled}
             annotationCount={activeViewportAnnotationsState.entries.length}
             selectedAnnotationCount={
@@ -513,70 +739,59 @@ export function DicomViewerApp() {
             }
             onToolChange={handleViewportToolChange}
             onLayoutChange={handleViewportLayoutChange}
+            onImageLayoutChange={handleViewportImageLayoutChange}
             onAction={handleViewportAction}
             onAnnotationManageAction={handleAnnotationManageAction}
             onOpenSettings={() => setSettingsOpen(true)}
             disabled={!orderedSeriesEntries.length}
           />
-          <header className="viewport-header">
-            <div>
-              <div className="viewport-kicker">
-                Active Viewport · {activeViewportLabel}
-              </div>
-              <h2 className="viewport-title">
-                <span data-testid="viewport-title">
-                  {activeSeriesEntry?.series.title ?? "No Active Series"}
-                </span>
-              </h2>
-            </div>
-            <div className="viewport-meta">
-              <span>{viewportLayout.label}</span>
-              <span>•</span>
-              <span>{activeSeriesEntry?.study.title ?? "未选中检查"}</span>
-              <span>•</span>
-              <span>{activeSeriesEntry?.series.imageCount ?? 0} frames</span>
-            </div>
-          </header>
           <div
             className="viewport-grid"
             data-testid="viewport-grid"
-            data-layout-id={viewportLayoutId}
-            data-layout-count={viewportIds.length}
+            data-layout-id={effectiveViewportLayoutId}
+            data-layout-count={visibleViewportIds.length}
+            data-maximized-viewport-id={maximizedViewportId ?? ""}
+            data-base-layout-id={viewportLayoutId}
             style={{
-              gridTemplateColumns: `repeat(${viewportLayout.columns}, minmax(0, 1fr))`,
-              gridTemplateRows: `repeat(${viewportLayout.rows}, minmax(0, 1fr))`,
+              gridTemplateColumns: `repeat(${effectiveViewportLayout.columns}, minmax(0, 1fr))`,
+              gridTemplateRows: `repeat(${effectiveViewportLayout.rows}, minmax(0, 1fr))`,
             }}
           >
-            {viewportLayout.cells.map((cell, index) => {
-              const viewportId = viewportIds[index];
+            {visibleViewportIds.map((viewportId, index) => {
+              const cell = effectiveViewportLayout.cells[index];
               const seriesEntry =
                 seriesEntryMap.get(viewportSeriesAssignments[viewportId] ?? "") ?? null;
 
               return (
                 <div
                   key={viewportId}
-                  className={`viewport-slot${selectedViewportId === viewportId ? " is-selected" : ""}`}
+                  className={`viewport-slot${selectedViewportId === viewportId ? " is-selected" : ""}${maximizedViewportId === viewportId ? " is-maximized" : ""}`}
                   data-testid={`viewport-slot-${viewportId}`}
                   data-viewport-id={viewportId}
+                  data-viewport-maximized={String(maximizedViewportId === viewportId)}
                   data-series-title={seriesEntry?.series.title ?? ""}
                   style={{
                     gridColumn: `${cell.column} / span ${cell.columnSpan ?? 1}`,
                     gridRow: `${cell.row} / span ${cell.rowSpan ?? 1}`,
                   }}
                 >
-                  <span className="viewport-slot-label">
-                    {getViewportSlotLabel(index)}
-                  </span>
                   <StackViewport
                     viewportKey={viewportId}
                     study={seriesEntry?.study ?? null}
                     series={seriesEntry?.series ?? null}
                     activeTool={activeViewportTool}
+                    imageLayoutId={
+                      viewportImageLayoutIdById[viewportId] ??
+                      DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID
+                    }
                     invertEnabled={viewportInvertEnabled[viewportId] ?? false}
                     overlaySettings={viewerSettings.viewportOverlay}
                     annotationCommand={annotationCommand}
                     isSelected={selectedViewportId === viewportId}
-                    onSelect={setSelectedViewportId}
+                    cellSelection={viewportCellSelectionById[viewportId] ?? "all"}
+                    onSelect={handleViewportSelect}
+                    onCellSelect={handleViewportCellSelect}
+                    onToggleMaximize={handleViewportToggleMaximize}
                     onAnnotationsChange={(state) => {
                       setViewportAnnotationsStateById((previous) => ({
                         ...previous,

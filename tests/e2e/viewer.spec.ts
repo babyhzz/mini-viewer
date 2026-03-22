@@ -87,6 +87,10 @@ test.describe("DICOM viewer smoke coverage", () => {
         schemaVersion: number;
         corners: Record<string, Array<{ id: string; tagKey: string }>>;
       };
+      toolbarShortcuts: {
+        schemaVersion: number;
+        bindings: Record<string, { code: string } | null>;
+      };
     };
 
     expect(payload.schemaVersion).toBe(1);
@@ -95,6 +99,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     expect(payload.viewportOverlay.corners.topRight.length).toBeGreaterThan(0);
     expect(payload.viewportOverlay.corners.bottomLeft.length).toBeGreaterThan(0);
     expect(payload.viewportOverlay.corners.bottomRight.length).toBeGreaterThan(0);
+    expect(payload.toolbarShortcuts.schemaVersion).toBe(1);
+    expect(payload.toolbarShortcuts.bindings).toHaveProperty("select");
+    expect(payload.toolbarShortcuts.bindings).toHaveProperty("settings");
   });
 
   test("home page loads navigator and renders an active viewport", async ({
@@ -103,21 +110,18 @@ test.describe("DICOM viewer smoke coverage", () => {
     await waitForViewerReady(page);
     const seriesCards = page.getByTestId("series-card");
     const viewportStage = page.getByTestId("viewport-stage");
-    const activeTitle = page.getByTestId("viewport-title");
     const frameIndicator = page.getByTestId("viewport-frame-indicator");
-    const firstSeriesTitle =
-      (await seriesCards.first().getAttribute("data-series-title")) ?? "";
     const firstImageCount = Number(
       (await seriesCards.first().getAttribute("data-image-count")) ?? "0",
     );
 
-    await expect(activeTitle).toHaveText(firstSeriesTitle);
     await expect(page.getByTestId("thumbnail-canvas").first()).toBeVisible();
     await expect(page.getByTestId("viewport-toolbar")).toBeVisible();
     await expect(page.getByTestId("viewport-tool-select")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+    await expect(page.getByTestId("viewport-image-layout-button")).toBeVisible();
     await expect(
       page.getByTestId("viewport-tool-group-measure"),
     ).toBeVisible();
@@ -143,29 +147,43 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(page.getByTestId("viewport-overlay-top-left")).toBeVisible();
     await expect(page.getByTestId("viewport-overlay-top-right")).toBeVisible();
     await expect(page.getByTestId("viewport-overlay-bottom-left")).toBeVisible();
+    await expect(page.getByTestId("viewport-scrollbar")).toBeVisible();
     await expect(frameIndicator).toContainText(`[1]/[${firstImageCount}]`);
     await expect(page.getByText("主视图加载失败")).toHaveCount(0);
     await expect(viewportStage).toHaveAttribute("data-active-tool", "select");
     await expect(viewportStage).toHaveAttribute("data-invert-enabled", "false");
     await expect(viewportStage).toHaveAttribute("data-viewport-selected", "true");
+    await expect(page.getByTestId("viewport-scrollbar")).toHaveAttribute(
+      "data-single-frame",
+      String(firstImageCount === 1),
+    );
 
     if (firstImageCount > 1) {
       await viewportStage.hover();
       await page.mouse.wheel(0, 320);
-      await expect(viewportStage).toHaveAttribute("data-frame-index", "2");
-      await expect(frameIndicator).toContainText(`[2]/[${firstImageCount}]`);
+      await expect(viewportStage).not.toHaveAttribute("data-frame-index", "1");
+
+      const nextFrameIndex = Number(
+        (await viewportStage.getAttribute("data-frame-index")) ?? "0",
+      );
+
+      expect(nextFrameIndex).toBeGreaterThan(1);
+      await expect(frameIndicator).toContainText(
+        `[${nextFrameIndex}]/[${firstImageCount}]`,
+      );
+      await expect(page.getByTestId("viewport-scrollbar")).toHaveAttribute(
+        "data-frame-index",
+        String(nextFrameIndex),
+      );
     }
 
     if ((await seriesCards.count()) > 1) {
       const secondCard = seriesCards.nth(1);
-      const secondSeriesTitle =
-        (await secondCard.getAttribute("data-series-title")) ?? "";
       const secondImageCount = Number(
         (await secondCard.getAttribute("data-image-count")) ?? "0",
       );
 
       await secondCard.click();
-      await expect(activeTitle).toHaveText(secondSeriesTitle);
       await expect(viewportStage).toHaveAttribute("data-status", "ready", {
         timeout: 60_000,
       });
@@ -183,7 +201,12 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     await expect(page.getByText("Viewer Settings")).toBeVisible();
     await expect(page.getByText("快捷导航")).toBeVisible();
-    await expect(page.getByRole("button", { name: "四角信息" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "四角信息", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "快捷键", exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "四角信息" }),
     ).toBeVisible();
@@ -191,6 +214,17 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(page.getByText("右下角")).toBeVisible();
     await expect(page.getByRole("button", { name: "保存设置" })).toBeVisible();
     await expect(page.getByRole("button", { name: "恢复默认" })).toBeVisible();
+    await page.getByRole("button", { name: "快捷键", exact: true }).click();
+    await expect(
+      page.getByTestId("viewer-settings-shortcuts-section"),
+    ).toBeVisible();
+    await expect(page.getByTestId("viewer-settings-shortcut-filter")).toBeVisible();
+    await expect(
+      page.getByTestId("viewer-settings-shortcut-group-basic"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("viewer-settings-shortcut-record-pan"),
+    ).toBeVisible();
 
     await page.getByTestId("viewer-settings-edit-topLeft-0").click();
     await expect(page.getByText("编辑左上角信息项")).toBeVisible();
@@ -198,12 +232,80 @@ test.describe("DICOM viewer smoke coverage", () => {
     await page.getByTestId("viewer-settings-editor-done").click();
     await expect(page.getByText("编辑左上角信息项")).toHaveCount(0);
 
+    const panShortcutButton = page.getByTestId("viewer-settings-shortcut-record-pan");
+    await panShortcutButton.click();
+    await expect(page.getByText("正在录制 平移")).toBeVisible();
+    await page.keyboard.press("Shift+K");
+    await expect(panShortcutButton).toContainText("Shift + K");
+    await page.getByTestId("viewer-settings-shortcut-filter").getByText(/已修改/).click();
+    await expect(panShortcutButton).toBeVisible();
+
     const closeButton = page
       .locator(".viewer-settings-footer-actions .ant-btn")
       .first();
     await expect(closeButton).toBeVisible();
     await closeButton.click();
     await expect(page.getByText("Viewer Settings")).toHaveCount(0);
+  });
+
+  test("custom toolbar shortcuts trigger viewer commands", async ({
+    page,
+    request,
+  }) => {
+    const response = await request.get("/api/settings");
+    const baseSettings = (await response.json()) as {
+      schemaVersion: number;
+      viewportOverlay: {
+        schemaVersion: number;
+        corners: Record<string, Array<{ id: string; tagKey: string }>>;
+      };
+      toolbarShortcuts: {
+        schemaVersion: number;
+        bindings: Record<
+          string,
+          | {
+              code: string;
+              ctrlKey: boolean;
+              altKey: boolean;
+              shiftKey: boolean;
+              metaKey: boolean;
+            }
+          | null
+        >;
+      };
+    };
+
+    baseSettings.toolbarShortcuts.bindings.pan = {
+      code: "KeyK",
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+      metaKey: false,
+    };
+
+    await page.route("**/api/settings", async (route, requestDetails) => {
+      if (requestDetails.method() !== "GET") {
+        await route.continue();
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(baseSettings),
+      });
+    });
+
+    await waitForViewerReady(page);
+
+    const viewportStage = page.getByTestId("viewport-stage");
+
+    await viewportStage.click();
+    await expect(viewportStage).toHaveAttribute("data-active-tool", "select");
+
+    await page.keyboard.press("K");
+
+    await expect(viewportStage).toHaveAttribute("data-active-tool", "pan");
   });
 
   test("layout switch expands to multiple auto-filled viewports", async ({
@@ -267,7 +369,6 @@ test.describe("DICOM viewer smoke coverage", () => {
       "data-viewport-selected",
       "true",
     );
-    await expect(page.getByTestId("viewport-title")).toHaveText(secondViewportTitle);
     expect(
       runtimeErrors.filter(
         (message) =>
@@ -280,6 +381,140 @@ test.describe("DICOM viewer smoke coverage", () => {
         message.includes("Too many active WebGL contexts"),
       ),
     ).toEqual([]);
+  });
+
+  test("double click maximizes a viewport and restores the previous layout", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await waitForViewerReady(page);
+
+    await page.getByTestId("viewport-layout-button").click();
+    await page.getByTestId("viewport-layout-option-2x2").click();
+
+    const viewportGrid = page.getByTestId("viewport-grid");
+    const secondViewportStage = page
+      .getByTestId("viewport-slot-viewport-2")
+      .locator('[data-testid="viewport-stage"]');
+
+    await expect(viewportGrid).toHaveAttribute("data-layout-id", "2x2");
+    await expect(viewportGrid).toHaveAttribute("data-layout-count", "4");
+    await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(4);
+
+    await secondViewportStage.dblclick({
+      position: {
+        x: 36,
+        y: 36,
+      },
+    });
+
+    await expect(viewportGrid).toHaveAttribute("data-layout-id", "1x1");
+    await expect(viewportGrid).toHaveAttribute("data-layout-count", "1");
+    await expect(viewportGrid).toHaveAttribute(
+      "data-maximized-viewport-id",
+      "viewport-2",
+    );
+    await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(1);
+    await expect(page.getByTestId("viewport-slot-viewport-2")).toHaveAttribute(
+      "data-viewport-maximized",
+      "true",
+    );
+
+    await secondViewportStage.dblclick({
+      position: {
+        x: 36,
+        y: 36,
+      },
+    });
+
+    await expect(viewportGrid).toHaveAttribute("data-layout-id", "2x2");
+    await expect(viewportGrid).toHaveAttribute("data-layout-count", "4");
+    await expect(viewportGrid).toHaveAttribute("data-maximized-viewport-id", "");
+    await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(4);
+  });
+
+  test("image layout switches the selected viewport into a montage grid", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await waitForViewerReady(page);
+
+    const viewportStage = page.getByTestId("viewport-stage");
+    const imageLayoutCells = page.getByTestId("viewport-image-layout-cell");
+    const frameCount = Number(
+      (await viewportStage.getAttribute("data-frame-count")) ?? "0",
+    );
+    const visibleCellCount = Math.min(4, frameCount);
+
+    await page.getByTestId("viewport-image-layout-button").click();
+    await page.getByTestId("viewport-image-layout-option-2x2").click();
+
+    await expect(viewportStage).toHaveAttribute("data-image-layout-id", "2x2");
+    await expect(viewportStage).toHaveAttribute("data-image-layout-count", "4");
+    await expect(viewportStage).toHaveAttribute("data-cell-selection", "all");
+    await expect(page.getByTestId("viewport-image-layout-grid")).toBeVisible();
+    await expect(imageLayoutCells).toHaveCount(4);
+    await expect(viewportStage).toHaveAttribute("data-image-layout-start-frame", "1");
+    await expect(viewportStage).toHaveAttribute(
+      "data-image-layout-end-frame",
+      String(visibleCellCount),
+    );
+    await expect(page.getByTestId("viewport-frame-indicator")).toHaveCount(0);
+    await expect(page.getByTestId("viewport-image-layout-cell-frame-indicator")).toHaveCount(
+      visibleCellCount,
+    );
+    await expect(
+      imageLayoutCells.first().getByTestId("viewport-image-layout-cell-overlay-top-left"),
+    ).toBeVisible();
+    await expect(
+      imageLayoutCells.first().getByTestId("viewport-image-layout-cell-frame-indicator"),
+    ).toContainText(`[1]/[${frameCount}]`);
+
+    if (frameCount > 1) {
+      const stageBox = await viewportStage.boundingBox();
+
+      expect(stageBox).not.toBeNull();
+
+      await viewportStage.click({
+        position: {
+          x: stageBox!.width * 0.75,
+          y: stageBox!.height * 0.25,
+        },
+      });
+
+      await expect(viewportStage).toHaveAttribute("data-cell-selection", "1");
+      await expect(
+        page.locator('[data-testid="viewport-image-layout-cell"][data-cell-index="0"]'),
+      ).toHaveAttribute("data-cell-selected", "false");
+      await expect(
+        page.locator('[data-testid="viewport-image-layout-cell"][data-cell-index="1"]'),
+      ).toHaveAttribute("data-cell-selected", "true");
+      await expect(
+        page
+          .locator('[data-testid="viewport-image-layout-cell"][data-cell-index="1"]')
+          .getByTestId("viewport-image-layout-cell-frame-indicator"),
+      ).toContainText(`[2]/[${frameCount}]`);
+    }
+
+    if (frameCount > 4) {
+      await viewportStage.hover();
+      await page.mouse.wheel(0, 320);
+
+      const nextStartFrame = Number(
+        (await viewportStage.getAttribute("data-image-layout-start-frame")) ?? "0",
+      );
+      const nextEndFrame = Number(
+        (await viewportStage.getAttribute("data-image-layout-end-frame")) ?? "0",
+      );
+
+      expect(nextStartFrame).toBeGreaterThan(1);
+      expect(nextEndFrame).toBeGreaterThan(nextStartFrame);
+      await expect(
+        imageLayoutCells.first().getByTestId("viewport-image-layout-cell-frame-indicator"),
+      ).toContainText(
+        `[${nextStartFrame}]/[${frameCount}]`,
+      );
+    }
   });
 
   test("select tool is the default and left-drag scrolls the stack", async ({

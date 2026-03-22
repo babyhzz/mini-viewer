@@ -9,6 +9,11 @@ import {
   type ViewportToolbarIconName,
 } from "@/components/viewport-toolbar-icons";
 import {
+  getViewportImageLayoutDefinition,
+  getViewportImageLayoutDefinitions,
+  type ViewportImageLayoutId,
+} from "@/lib/viewports/image-layouts";
+import {
   getViewportLayoutDefinition,
   getViewportLayoutDefinitions,
   type ViewportLayoutId,
@@ -30,11 +35,13 @@ interface ViewportToolbarProps {
   activeTool: ViewportTool;
   groupSelections: ViewportToolGroupSelections;
   layoutId: ViewportLayoutId;
+  imageLayoutId: ViewportImageLayoutId;
   invertEnabled: boolean;
   annotationCount: number;
   selectedAnnotationCount: number;
   onToolChange: (tool: ViewportTool) => void;
   onLayoutChange: (layoutId: ViewportLayoutId) => void;
+  onImageLayoutChange: (layoutId: ViewportImageLayoutId) => void;
   onAction: (action: ViewportAction) => void;
   onAnnotationManageAction: (
     action: "deleteSelected" | "clearAll",
@@ -49,9 +56,9 @@ interface OverflowToolbarOption {
   onSelect: () => void;
 }
 
-const TOOL_BUTTON_MIN_WIDTH = 44;
-const TOOL_GROUP_MIN_WIDTH = 40;
-const TOOL_OVERFLOW_MIN_WIDTH = 44;
+const TOOL_BUTTON_MIN_WIDTH = 50;
+const TOOL_GROUP_MIN_WIDTH = 50;
+const TOOL_OVERFLOW_MIN_WIDTH = 50;
 
 function getToolbarItemIconName(
   item: ViewportToolbarItemDefinition,
@@ -111,6 +118,7 @@ function buildOverflowOptions(
   items: ViewportToolbarItemDefinition[],
   onToolChange: (tool: ViewportTool) => void,
   onLayoutChange: (layoutId: ViewportLayoutId) => void,
+  onImageLayoutChange: (layoutId: ViewportImageLayoutId) => void,
   onAction: (action: ViewportAction) => void,
   onAnnotationManageAction: (
     action: "deleteSelected" | "clearAll",
@@ -138,6 +146,18 @@ function buildOverflowOptions(
     }
 
     if (item.kind === "menu") {
+      if (item.id === "imageLayout") {
+        for (const layout of getViewportImageLayoutDefinitions()) {
+          options.push({
+            value: `${item.id}:${layout.id}`,
+            label: `${item.label} · ${layout.label}`,
+            onSelect: () => onImageLayoutChange(layout.id),
+          });
+        }
+
+        continue;
+      }
+
       if (item.id === "layout") {
         for (const layout of getViewportLayoutDefinitions()) {
           options.push({
@@ -181,11 +201,13 @@ export function ViewportToolbar({
   activeTool,
   groupSelections,
   layoutId,
+  imageLayoutId,
   invertEnabled,
   annotationCount,
   selectedAnnotationCount,
   onToolChange,
   onLayoutChange,
+  onImageLayoutChange,
   onAction,
   onAnnotationManageAction,
   onOpenSettings,
@@ -226,10 +248,27 @@ export function ViewportToolbar({
     overflowItems,
     onToolChange,
     onLayoutChange,
+    onImageLayoutChange,
     onAction,
     onAnnotationManageAction,
   );
+  const currentImageLayout = getViewportImageLayoutDefinition(imageLayoutId);
   const currentLayout = getViewportLayoutDefinition(layoutId);
+  const imageLayoutMenu: MenuProps = {
+    selectable: true,
+    selectedKeys: [imageLayoutId],
+    items: getViewportImageLayoutDefinitions().map((layout) => ({
+      key: layout.id,
+      label: (
+        <span data-testid={`viewport-image-layout-option-${layout.id}`}>
+          {layout.label} · {layout.description}
+        </span>
+      ),
+    })),
+    onClick: ({ key }) => {
+      onImageLayoutChange(key as ViewportImageLayoutId);
+    },
+  };
   const layoutMenu: MenuProps = {
     selectable: true,
     selectedKeys: [layoutId],
@@ -339,9 +378,15 @@ export function ViewportToolbar({
 
             if (item.kind === "menu") {
               const menu =
-                item.id === "layout" ? layoutMenu : annotationManageMenu;
+                item.id === "imageLayout"
+                  ? imageLayoutMenu
+                  : item.id === "layout"
+                    ? layoutMenu
+                    : annotationManageMenu;
               const dataTestId =
-                item.id === "layout"
+                item.id === "imageLayout"
+                  ? "viewport-image-layout-button"
+                  : item.id === "layout"
                   ? "viewport-layout-button"
                   : "viewport-annotation-manage-button";
               const count =
@@ -349,7 +394,9 @@ export function ViewportToolbar({
                   ? selectedAnnotationCount
                   : null;
               const title =
-                item.id === "layout"
+                item.id === "imageLayout"
+                  ? `图像布局 ${currentImageLayout.label} · ${currentImageLayout.description}`
+                  : item.id === "layout"
                   ? `布局 ${currentLayout.label} · ${currentLayout.description}`
                   : "删除图元";
 

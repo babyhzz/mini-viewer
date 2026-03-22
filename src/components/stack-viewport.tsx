@@ -1,6 +1,10 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
+import type {
+  Dispatch,
+  MouseEvent as ReactMouseEvent,
+  SetStateAction,
+} from "react";
 import { useEffect, useRef, useState } from "react";
 import { Spin } from "antd";
 
@@ -21,13 +25,19 @@ import {
   type ViewportAnnotationEntry,
 } from "@/lib/tools/cornerstone-tool-adapter";
 import {
-  getViewportToolInteractionHint,
   isViewportAnnotationTool,
   type ViewportTool,
 } from "@/lib/tools/registry";
-import type { DicomSeriesNode, DicomStudyNode } from "@/types/dicom";
+import {
+  getViewportImageLayoutDefinition,
+  type ViewportImageLayoutId,
+} from "@/lib/viewports/image-layouts";
 import type {
-  OverlayTagKey,
+  DicomImageNode,
+  DicomSeriesNode,
+  DicomStudyNode,
+} from "@/types/dicom";
+import type {
   ViewportCorner,
   ViewportOverlaySettings,
 } from "@/types/settings";
@@ -39,11 +49,15 @@ interface StackViewportProps {
   study: DicomStudyNode | null;
   series: DicomSeriesNode | null;
   activeTool: ViewportTool;
+  imageLayoutId: ViewportImageLayoutId;
   invertEnabled: boolean;
   overlaySettings: ViewportOverlaySettings;
   annotationCommand?: ViewportAnnotationCommand | null;
   isSelected: boolean;
+  cellSelection: "all" | number;
   onSelect: (viewportKey: string) => void;
+  onCellSelect?: (viewportKey: string, cellIndex: number) => void;
+  onToggleMaximize?: (viewportKey: string) => void;
   onAnnotationsChange?: (state: ViewportAnnotationsState) => void;
 }
 
@@ -52,9 +66,11 @@ export interface ViewportAnnotationsState {
   selectedAnnotationUIDs: string[];
 }
 
-const WHEEL_DELTA_THRESHOLD = 72;
-const WHEEL_SCROLL_INTERVAL_MS = 90;
+const WHEEL_DELTA_THRESHOLD = 48;
+const WHEEL_SCROLL_INTERVAL_MS = 36;
 const WHEEL_IDLE_RESET_MS = 220;
+const WHEEL_LINE_HEIGHT_PX = 18;
+const MAX_WHEEL_SCROLL_STEPS_PER_EVENT = 3;
 const STACK_CONTEXT_PREFETCH_PRIORITY = 0;
 const STACK_CONTEXT_PREFETCH_CONFIG = {
   maxImagesToPrefetch: 24,
@@ -81,12 +97,12 @@ interface OverlayContextValueMap {
   seriesTitle: string;
   modalitySummary: string;
   frameProgress: string;
-  interactionHint: string;
   imageFileName: string;
   instanceNumber: string;
 }
 
 type ViewportAnnotationCounts = Record<ViewportTool, number>;
+type ViewportCellSelectionState = "none" | "all" | "single";
 
 const EMPTY_ANNOTATION_COUNTS: ViewportAnnotationCounts = {
   select: 0,
@@ -233,16 +249,315 @@ function syncViewportAnnotationState(
   });
 }
 
+function disableStackContextPrefetchSafely(
+  tools: typeof import("@cornerstonejs/tools") | null | undefined,
+  element: HTMLDivElement | null | undefined,
+) {
+  if (!tools || !element) {
+    return;
+  }
+
+  try {
+    tools.utilities.stackContextPrefetch.disable(element);
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Failed to disable stack prefetch for viewport cleanup", error);
+    }
+  }
+}
+
+function normalizeWheelDelta(
+  event: WheelEvent,
+  viewportHeight: number,
+) {
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+    return event.deltaY * WHEEL_LINE_HEIGHT_PX;
+  }
+
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    return event.deltaY * Math.max(viewportHeight, 1);
+  }
+
+  return event.deltaY;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+const VIEWPORT_OVERLAY_CLASS_NAMES: Record<ViewportCorner, string> = {
+  topLeft: "viewport-corner-top-left",
+  topRight: "viewport-corner-top-right",
+  bottomLeft: "viewport-corner-bottom-left",
+  bottomRight: "viewport-corner-bottom-right",
+};
+
+const VIEWPORT_OVERLAY_TEST_IDS: Record<ViewportCorner, string> = {
+  topLeft: "viewport-overlay-top-left",
+  topRight: "viewport-overlay-top-right",
+  bottomLeft: "viewport-overlay-bottom-left",
+  bottomRight: "viewport-frame-indicator",
+};
+
+const VIEWPORT_IMAGE_LAYOUT_CELL_OVERLAY_TEST_IDS: Record<
+  ViewportCorner,
+  string
+> = {
+  topLeft: "viewport-image-layout-cell-overlay-top-left",
+  topRight: "viewport-image-layout-cell-overlay-top-right",
+  bottomLeft: "viewport-image-layout-cell-overlay-bottom-left",
+  bottomRight: "viewport-image-layout-cell-frame-indicator",
+};
+
+function buildOverlayContextValueMap(
+  study: DicomStudyNode | null,
+  series: DicomSeriesNode | null,
+  image: DicomImageNode | null | undefined,
+  frameProgress: string,
+): OverlayContextValueMap {
+  const modalitySummary = [
+    series?.modality,
+    series?.seriesNumber ? `S${series.seriesNumber}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return {
+    patientName: formatOverlayValue(study?.patientName, "未标注患者"),
+    patientId: formatOverlayValue(study?.patientId),
+    studyTitle: formatOverlayValue(study?.title, "未选中检查"),
+    studyDate: formatOverlayValue(study?.studyDate),
+    seriesTitle: formatOverlayValue(series?.title, "未选中序列"),
+    modalitySummary: formatOverlayValue(modalitySummary, "未标注模态"),
+    frameProgress,
+    imageFileName: formatOverlayValue(image?.fileName),
+    instanceNumber: formatOverlayValue(image?.instanceNumber?.toString()),
+  };
+}
+
+function getOverlayValue(
+  tagKey: keyof OverlayContextValueMap | "interactionHint",
+  overlayValueMap: OverlayContextValueMap,
+) {
+  if (tagKey === "interactionHint") {
+    return "";
+  }
+
+  return overlayValueMap[tagKey];
+}
+
+function getViewportImageLayoutCellIndex(
+  event: ReactMouseEvent<HTMLDivElement>,
+  rows: number,
+  columns: number,
+) {
+  const stageRect = event.currentTarget.getBoundingClientRect();
+  const relativeX = event.clientX - stageRect.left;
+  const relativeY = event.clientY - stageRect.top;
+
+  if (
+    stageRect.width <= 0 ||
+    stageRect.height <= 0 ||
+    relativeX < 0 ||
+    relativeY < 0 ||
+    relativeX > stageRect.width ||
+    relativeY > stageRect.height
+  ) {
+    return null;
+  }
+
+  const columnIndex = clampNumber(
+    Math.floor((relativeX / stageRect.width) * columns),
+    0,
+    columns - 1,
+  );
+  const rowIndex = clampNumber(
+    Math.floor((relativeY / stageRect.height) * rows),
+    0,
+    rows - 1,
+  );
+
+  return rowIndex * columns + columnIndex;
+}
+
+interface ViewportOverlayLayerProps {
+  overlaySettings: ViewportOverlaySettings;
+  overlayValueMap: OverlayContextValueMap;
+  testIds: Record<ViewportCorner, string>;
+}
+
+function ViewportOverlayLayer({
+  overlaySettings,
+  overlayValueMap,
+  testIds,
+}: ViewportOverlayLayerProps) {
+  return (Object.keys(VIEWPORT_OVERLAY_CLASS_NAMES) as ViewportCorner[]).map(
+    (corner) => {
+      const items = overlaySettings.corners[corner];
+
+      if (!items.length) {
+        return null;
+      }
+
+      return (
+        <div
+          key={corner}
+          className={`viewport-corner ${VIEWPORT_OVERLAY_CLASS_NAMES[corner]}`}
+          data-testid={testIds[corner]}
+        >
+          {items.map((item) => {
+            const value = getOverlayValue(item.tagKey, overlayValueMap);
+
+            if (!value) {
+              return null;
+            }
+
+            return (
+              <div
+                key={item.id}
+                className="viewport-corner-line"
+                style={{
+                  color: item.style.color,
+                  fontSize: `${item.style.fontSize}px`,
+                  fontWeight: item.style.fontWeight,
+                  fontStyle: item.style.italic ? "italic" : "normal",
+                }}
+              >
+                {item.prefix}
+                {value}
+              </div>
+            );
+          })}
+        </div>
+      );
+    },
+  );
+}
+
+interface ViewportImageLayoutCanvasProps {
+  viewportKey: string;
+  cellIndex: number;
+  image: DicomImageNode | null;
+  frameIndex: number | null;
+  invertEnabled: boolean;
+  overlaySettings: ViewportOverlaySettings;
+  overlayValueMap: OverlayContextValueMap | null;
+  selectionState: ViewportCellSelectionState;
+}
+
+function ViewportImageLayoutCanvas({
+  viewportKey,
+  cellIndex,
+  image,
+  frameIndex,
+  invertEnabled,
+  overlaySettings,
+  overlayValueMap,
+  selectionState,
+}: ViewportImageLayoutCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function renderImage() {
+      const canvas = canvasRef.current;
+
+      if (!canvas) {
+        return;
+      }
+
+      if (!image) {
+        const context = canvas.getContext("2d");
+
+        context?.clearRect(0, 0, canvas.width, canvas.height);
+        setHasError(false);
+        return;
+      }
+
+      try {
+        const { core } = await initializeCornerstone();
+
+        if (cancelled || !canvasRef.current) {
+          return;
+        }
+
+        await core.utilities.loadImageToCanvas({
+          canvas: canvasRef.current,
+          imageId: toCornerstoneImageId(image.dicomUrl),
+          renderingEngineId: `viewport-image-layout-${viewportKey}-${cellIndex}`,
+          thumbnail: true,
+        });
+
+        canvasRef.current.style.width = "100%";
+        canvasRef.current.style.height = "100%";
+
+        if (!cancelled) {
+          setHasError(false);
+        }
+      } catch (error) {
+        console.error("Failed to render viewport image layout cell", error);
+
+        if (!cancelled) {
+          setHasError(true);
+        }
+      }
+    }
+
+    renderImage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cellIndex, image, viewportKey]);
+
+  const statusLabel = hasError ? "ERR" : null;
+
+  return (
+    <div
+      className={`viewport-image-layout-cell${!image ? " is-empty" : ""}${hasError ? " is-error" : ""}${selectionState !== "none" ? " is-selected" : ""}`}
+      data-testid="viewport-image-layout-cell"
+      data-cell-index={cellIndex}
+      data-cell-selected={String(selectionState !== "none")}
+      data-cell-selection-state={selectionState}
+      data-cell-empty={String(!image)}
+      data-frame-index={frameIndex == null ? "" : String(frameIndex)}
+    >
+      <canvas
+        ref={canvasRef}
+        className={`viewport-image-layout-canvas${invertEnabled ? " is-inverted" : ""}`}
+        width={512}
+        height={512}
+      />
+      {overlayValueMap ? (
+        <ViewportOverlayLayer
+          overlaySettings={overlaySettings}
+          overlayValueMap={overlayValueMap}
+          testIds={VIEWPORT_IMAGE_LAYOUT_CELL_OVERLAY_TEST_IDS}
+        />
+      ) : null}
+      {statusLabel ? (
+        <div className="viewport-image-layout-cell-status">{statusLabel}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export function StackViewport({
   viewportKey,
   study,
   series,
   activeTool,
+  imageLayoutId,
   invertEnabled,
   overlaySettings,
   annotationCommand = null,
   isSelected,
+  cellSelection,
   onSelect,
+  onCellSelect,
+  onToggleMaximize,
   onAnnotationsChange,
 }: StackViewportProps) {
   const elementRef = useRef<HTMLDivElement | null>(null);
@@ -286,58 +601,118 @@ export function StackViewport({
   const toolGroupId = `dicom-tools-${viewportKey}`;
 
   const totalImages = series?.imageCount ?? 0;
-  const patientName = formatOverlayValue(study?.patientName, "未标注患者");
-  const patientId = formatOverlayValue(study?.patientId);
-  const studyDate = formatOverlayValue(study?.studyDate);
-  const studyTitle = formatOverlayValue(study?.title, "未选中检查");
-  const seriesTitle = formatOverlayValue(series?.title, "未选中序列");
-  const interactionHint = getViewportToolInteractionHint(activeTool);
+  const imageLayoutDefinition = getViewportImageLayoutDefinition(imageLayoutId);
+  const hasMontageImageLayout = imageLayoutDefinition.cellCount > 1;
+  const isMontageDriverInteractive =
+    hasMontageImageLayout && isSelected && activeTool === "select";
+  const visibleImageCount = totalImages
+    ? Math.min(imageLayoutDefinition.cellCount, totalImages)
+    : 0;
+  const maxImageLayoutStartFrameIndex = totalImages
+    ? Math.max(1, totalImages - visibleImageCount + 1)
+    : 0;
+  const imageLayoutStartFrameIndex = totalImages
+    ? clampNumber(currentImageIndex || 1, 1, maxImageLayoutStartFrameIndex)
+    : 0;
+  const imageLayoutEndFrameIndex = imageLayoutStartFrameIndex
+    ? Math.min(
+        totalImages,
+        imageLayoutStartFrameIndex + visibleImageCount - 1,
+      )
+    : 0;
+  const imageLayoutFrameLabel =
+    visibleImageCount > 1 && imageLayoutStartFrameIndex && imageLayoutEndFrameIndex
+      ? `[${imageLayoutStartFrameIndex}-${imageLayoutEndFrameIndex}]/[${totalImages}]`
+      : `[${imageLayoutStartFrameIndex || currentImageIndex}]/[${totalImages}]`;
+  const imageLayoutCells = Array.from(
+    { length: imageLayoutDefinition.cellCount },
+    (_, cellIndex) => {
+      const frameIndex = imageLayoutStartFrameIndex + cellIndex;
+
+      if (
+        !series ||
+        !imageLayoutStartFrameIndex ||
+        frameIndex > imageLayoutEndFrameIndex
+      ) {
+        return {
+          cellIndex,
+          frameIndex: null,
+          image: null,
+        };
+      }
+
+      return {
+        cellIndex,
+        frameIndex,
+        image: series.images[frameIndex - 1] ?? null,
+      };
+    },
+  );
+  const hasViewportScrollIndicator = totalImages > 0;
+  const isSingleFrameSeries = totalImages === 1;
+  const scrollThumbSizePercent =
+    totalImages > 0
+      ? Math.min(100, Math.max(12, (visibleImageCount / totalImages) * 100))
+      : 0;
+  const scrollProgressRatio =
+    totalImages > visibleImageCount && imageLayoutStartFrameIndex > 0
+      ? (imageLayoutStartFrameIndex - 1) / (totalImages - visibleImageCount)
+      : 0;
+  const scrollThumbOffsetPercent =
+    totalImages > visibleImageCount
+      ? scrollProgressRatio * (100 - scrollThumbSizePercent)
+      : 0;
   const currentImage =
-    currentImageIndex > 0 ? series?.images[currentImageIndex - 1] : undefined;
-  const modalitySummary = [series?.modality, series?.seriesNumber ? `S${series.seriesNumber}` : undefined]
-    .filter(Boolean)
-    .join(" · ");
-  const overlayValueMap: OverlayContextValueMap = {
-    patientName,
-    patientId,
-    studyTitle,
-    studyDate,
-    seriesTitle,
-    modalitySummary: formatOverlayValue(modalitySummary, "未标注模态"),
-    frameProgress: `[${currentImageIndex}]/[${totalImages}]`,
-    interactionHint,
-    imageFileName: formatOverlayValue(currentImage?.fileName),
-    instanceNumber: formatOverlayValue(
-      currentImage?.instanceNumber?.toString(),
-    ),
+    imageLayoutStartFrameIndex > 0
+      ? series?.images[imageLayoutStartFrameIndex - 1]
+      : null;
+  const overlayValueMap = buildOverlayContextValueMap(
+    study,
+    series,
+    currentImage,
+    imageLayoutFrameLabel,
+  );
+  const imageLayoutCellSelectionStateByIndex = imageLayoutCells.map((cell) => {
+    if (!cell.image || !isSelected) {
+      return "none";
+    }
+
+    if (cellSelection === "all") {
+      return "all";
+    }
+
+    return cellSelection === cell.cellIndex ? "single" : "none";
+  });
+
+  const handleViewportPointerDownCapture = () => {
+    if (isSelected) {
+      return;
+    }
+
+    onSelect(viewportKey);
   };
 
-  const overlayCorners: Array<{
-    corner: ViewportCorner;
-    className: string;
-    testId: string;
-  }> = [
-    {
-      corner: "topLeft",
-      className: "viewport-corner-top-left",
-      testId: "viewport-overlay-top-left",
-    },
-    {
-      corner: "topRight",
-      className: "viewport-corner-top-right",
-      testId: "viewport-overlay-top-right",
-    },
-    {
-      corner: "bottomLeft",
-      className: "viewport-corner-bottom-left",
-      testId: "viewport-overlay-bottom-left",
-    },
-    {
-      corner: "bottomRight",
-      className: "viewport-corner-bottom-right",
-      testId: "viewport-frame-indicator",
-    },
-  ];
+  const handleViewportClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!hasMontageImageLayout || !isSelected || activeTool !== "select") {
+      return;
+    }
+
+    const cellIndex = getViewportImageLayoutCellIndex(
+      event,
+      imageLayoutDefinition.rows,
+      imageLayoutDefinition.columns,
+    );
+
+    if (
+      cellIndex == null ||
+      !imageLayoutCells[cellIndex]?.image ||
+      cellSelection === cellIndex
+    ) {
+      return;
+    }
+
+    onCellSelect?.(viewportKey, cellIndex);
+  };
 
   useEffect(() => {
     const element = elementRef.current;
@@ -456,13 +831,17 @@ export function StackViewport({
       event.stopPropagation();
 
       const now = performance.now();
+      const normalizedDelta = normalizeWheelDelta(
+        event,
+        elementRef.current?.clientHeight ?? 0,
+      );
 
       if (now - lastWheelAtRef.current > WHEEL_IDLE_RESET_MS) {
         wheelDeltaRef.current = 0;
       }
 
       lastWheelAtRef.current = now;
-      wheelDeltaRef.current += event.deltaY;
+      wheelDeltaRef.current += normalizedDelta;
 
       if (Math.abs(wheelDeltaRef.current) < WHEEL_DELTA_THRESHOLD) {
         return;
@@ -472,7 +851,18 @@ export function StackViewport({
         return;
       }
 
-      const scrollDelta = wheelDeltaRef.current > 0 ? 1 : -1;
+      const nextScrollSteps = Math.min(
+        MAX_WHEEL_SCROLL_STEPS_PER_EVENT,
+        Math.floor(Math.abs(wheelDeltaRef.current) / WHEEL_DELTA_THRESHOLD),
+      );
+
+      if (nextScrollSteps < 1) {
+        return;
+      }
+
+      const scrollDelta = wheelDeltaRef.current > 0
+        ? nextScrollSteps
+        : -nextScrollSteps;
 
       core.utilities.scroll(viewport, {
         delta: scrollDelta,
@@ -481,7 +871,8 @@ export function StackViewport({
       });
 
       lastScrollAtRef.current = now;
-      wheelDeltaRef.current -= scrollDelta * WHEEL_DELTA_THRESHOLD;
+      wheelDeltaRef.current -=
+        Math.sign(scrollDelta) * nextScrollSteps * WHEEL_DELTA_THRESHOLD;
     };
 
     async function initializeViewportRuntime() {
@@ -565,9 +956,7 @@ export function StackViewport({
     return () => {
       cancelled = true;
 
-      if (cleanupElement) {
-        cleanupTools?.utilities.stackContextPrefetch.disable(cleanupElement);
-      }
+      disableStackContextPrefetchSafely(cleanupTools, cleanupElement);
       cleanupElement?.removeEventListener(
         cleanupCore?.Enums.Events.CAMERA_MODIFIED ?? "",
         handleCameraModified as EventListener,
@@ -779,7 +1168,7 @@ export function StackViewport({
 
     async function loadSeries() {
       if (!series || series.images.length === 0) {
-        currentTools.utilities.stackContextPrefetch.disable(currentElement);
+        disableStackContextPrefetchSafely(currentTools, currentElement);
         setStatus("idle");
         setCurrentImageIndex(0);
         setPanOffset(DEFAULT_PAN_OFFSET);
@@ -809,7 +1198,7 @@ export function StackViewport({
           toCornerstoneImageId(image.dicomUrl),
         );
 
-        currentTools.utilities.stackContextPrefetch.disable(currentElement);
+        disableStackContextPrefetchSafely(currentTools, currentElement);
         await currentViewport.setStack(imageIds);
 
         if (cancelled) {
@@ -870,7 +1259,7 @@ export function StackViewport({
 
     return () => {
       cancelled = true;
-      currentTools.utilities.stackContextPrefetch.disable(currentElement);
+      disableStackContextPrefetchSafely(currentTools, currentElement);
     };
   }, [
     containerReady,
@@ -890,52 +1279,93 @@ export function StackViewport({
       data-status={status}
       data-frame-index={currentImageIndex}
       data-frame-count={totalImages}
+      data-image-layout-id={imageLayoutId}
+      data-image-layout-count={imageLayoutDefinition.cellCount}
+      data-image-layout-start-frame={imageLayoutStartFrameIndex}
+      data-image-layout-end-frame={imageLayoutEndFrameIndex}
       data-viewport-id={viewportKey}
       data-viewport-selected={String(isSelected)}
+      data-cell-selection={String(cellSelection)}
       data-voi-window-width={voiWindowWidth}
       data-voi-window-center={voiWindowCenter}
       data-active-annotation-count={annotationCounts[activeTool]}
       data-annotation-total={getTotalViewportAnnotationCount(annotationCounts)}
       data-selected-annotation-count={selectedAnnotationCount}
       data-viewport-size={`${viewportSize.width}x${viewportSize.height}`}
-      onPointerDownCapture={() => onSelect(viewportKey)}
-    >
-      <div ref={elementRef} className="viewport-canvas" />
-      {overlayCorners.map(({ corner, className, testId }) => {
-        const items = overlaySettings.corners[corner];
-
-        if (!items.length) {
-          return null;
+      onPointerDownCapture={handleViewportPointerDownCapture}
+      onClick={handleViewportClick}
+      onDoubleClick={() => {
+        if (!onToggleMaximize || isViewportAnnotationTool(activeTool)) {
+          return;
         }
 
-        return (
+        onToggleMaximize(viewportKey);
+      }}
+    >
+      {hasMontageImageLayout ? (
+        <div
+          className="viewport-image-layout-grid"
+          data-testid="viewport-image-layout-grid"
+          data-image-layout-id={imageLayoutId}
+          style={{
+            gridTemplateColumns: `repeat(${imageLayoutDefinition.columns}, minmax(0, 1fr))`,
+            gridTemplateRows: `repeat(${imageLayoutDefinition.rows}, minmax(0, 1fr))`,
+          }}
+        >
+          {imageLayoutCells.map((cell) => (
+            <ViewportImageLayoutCanvas
+              key={`${viewportKey}-${cell.cellIndex}`}
+              viewportKey={viewportKey}
+              cellIndex={cell.cellIndex}
+              image={cell.image}
+              frameIndex={cell.frameIndex}
+              invertEnabled={invertEnabled}
+              overlaySettings={overlaySettings}
+              overlayValueMap={
+                cell.image
+                  ? buildOverlayContextValueMap(
+                      study,
+                      series,
+                      cell.image,
+                      `[${cell.frameIndex ?? 0}]/[${totalImages}]`,
+                    )
+                  : null
+              }
+              selectionState={imageLayoutCellSelectionStateByIndex[cell.cellIndex]}
+            />
+          ))}
+        </div>
+      ) : null}
+      <div
+        ref={elementRef}
+        className={`viewport-canvas${hasMontageImageLayout ? " is-driver-hidden" : ""}${isMontageDriverInteractive ? " is-driver-interactive" : ""}`}
+      />
+      {hasViewportScrollIndicator ? (
+        <div
+          className="viewport-stack-scrollbar"
+          data-testid="viewport-scrollbar"
+          data-single-frame={String(isSingleFrameSeries)}
+          data-frame-index={imageLayoutStartFrameIndex || currentImageIndex}
+          data-frame-count={totalImages}
+          aria-hidden="true"
+        >
           <div
-            key={corner}
-            className={`viewport-corner ${className}`}
-            data-testid={testId}
-          >
-            {items.map((item) => {
-              const value = overlayValueMap[item.tagKey as OverlayTagKey];
-
-              return (
-                <div
-                  key={item.id}
-                  className="viewport-corner-line"
-                  style={{
-                    color: item.style.color,
-                    fontSize: `${item.style.fontSize}px`,
-                    fontWeight: item.style.fontWeight,
-                    fontStyle: item.style.italic ? "italic" : "normal",
-                  }}
-                >
-                  {item.prefix}
-                  {value}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
+            className="viewport-stack-scrollbar-thumb"
+            data-testid="viewport-scrollbar-thumb"
+            style={{
+              height: `${scrollThumbSizePercent}%`,
+              top: `${scrollThumbOffsetPercent}%`,
+            }}
+          />
+        </div>
+      ) : null}
+      {!hasMontageImageLayout ? (
+        <ViewportOverlayLayer
+          overlaySettings={overlaySettings}
+          overlayValueMap={overlayValueMap}
+          testIds={VIEWPORT_OVERLAY_TEST_IDS}
+        />
+      ) : null}
       {status === "loading" ? (
         <div className="status-layer">
           <Spin size="large" />

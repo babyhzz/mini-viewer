@@ -7,6 +7,10 @@ import type {
   ViewportCorner,
   ViewportOverlaySettings,
 } from "@/types/settings";
+import {
+  createDefaultToolbarShortcutSettings,
+  normalizeToolbarShortcutSettings,
+} from "@/lib/settings/shortcuts";
 
 export interface OverlayTagDefinition {
   key: OverlayTagKey;
@@ -87,7 +91,7 @@ export const OVERLAY_FONT_WEIGHT_OPTIONS: Array<{
 const DEFAULT_LINE_PRIMARY: OverlayTextStyle = {
   color: "#edf2f7",
   fontSize: 12,
-  fontWeight: "700",
+  fontWeight: "500",
   italic: false,
 };
 
@@ -147,14 +151,6 @@ export function createDefaultViewportOverlaySettings(): ViewportOverlaySettings 
       ],
       bottomRight: [
         createDefaultFrameProgressItemConfig("bottom-right-frame-progress"),
-        createOverlayItemConfig(
-          "bottom-right-interaction",
-          "interactionHint",
-          "",
-          {
-            ...DEFAULT_LINE_SECONDARY,
-          },
-        ),
       ],
     },
   };
@@ -173,15 +169,48 @@ export function createDefaultFrameProgressItemConfig(id: string) {
   return createOverlayItemConfig(id, "frameProgress", "", {
     color: "#edf2f7",
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "500",
     italic: false,
   });
+}
+
+function isLegacyDefaultOverlayItem(
+  item: OverlayCornerItemConfig,
+  fallback: OverlayCornerItemConfig,
+) {
+  return (
+    item.id === fallback.id &&
+    item.tagKey === fallback.tagKey &&
+    item.prefix === fallback.prefix
+  );
+}
+
+function migrateLegacyDefaultItemWeight(
+  item: OverlayCornerItemConfig,
+  fallback: OverlayCornerItemConfig,
+): OverlayCornerItemConfig {
+  if (!isLegacyDefaultOverlayItem(item, fallback)) {
+    return item;
+  }
+
+  if (item.style.fontWeight !== "700") {
+    return item;
+  }
+
+  return {
+    ...item,
+    style: {
+      ...item.style,
+      fontWeight: fallback.style.fontWeight,
+    },
+  };
 }
 
 export function createDefaultViewerSettings(): ViewerSettings {
   return {
     schemaVersion: 1,
     viewportOverlay: createDefaultViewportOverlaySettings(),
+    toolbarShortcuts: createDefaultToolbarShortcutSettings(),
   };
 }
 
@@ -235,7 +264,8 @@ function normalizeOverlayItem(
       ? (item.style as Partial<OverlayTextStyle>)
       : undefined;
 
-  return {
+  return migrateLegacyDefaultItemWeight(
+    {
     id:
       typeof item?.id === "string" && item.id.trim()
         ? item.id.trim()
@@ -266,7 +296,9 @@ function normalizeOverlayItem(
           ? style.italic
           : fallback.style.italic,
     },
-  };
+    },
+    fallback,
+  );
 }
 
 function normalizeCornerItems(
@@ -288,6 +320,7 @@ function normalizeCornerItems(
     .map((item, index) =>
       normalizeOverlayItem(item, fallback[index] ?? fallbackItem),
     )
+    .filter((item) => item.tagKey !== "interactionHint")
     .filter(Boolean);
 
   return normalizedItems.length
@@ -333,6 +366,9 @@ export function normalizeViewerSettings(value: unknown): ViewerSettings {
         ),
       },
     },
+    toolbarShortcuts: normalizeToolbarShortcutSettings(
+      settings?.toolbarShortcuts,
+    ),
   };
 }
 

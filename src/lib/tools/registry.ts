@@ -10,7 +10,7 @@ export type ViewportTool =
   | "ellipseRoi"
   | "circleRoi";
 export type ViewportAction = "invert" | "annotationList";
-export type ViewportToolbarMenu = "layout" | "annotationManage";
+export type ViewportToolbarMenu = "layout" | "imageLayout" | "annotationManage";
 export type ViewportToolGroupId = "measure" | "roi";
 export type ViewportToolbarItemId =
   | ViewportTool
@@ -22,6 +22,7 @@ export type ViewportToolbarIconKey =
   | "pan"
   | "windowLevel"
   | "layout"
+  | "imageLayout"
   | "measure"
   | "roi"
   | "invert"
@@ -228,6 +229,11 @@ const viewportToolbarMenuDefinitions: Record<
     label: "布局",
     hint: "切换视口布局",
   },
+  imageLayout: {
+    id: "imageLayout",
+    label: "图像布局",
+    hint: "切换当前视口内的序列图像布局",
+  },
   annotationManage: {
     id: "annotationManage",
     label: "删除图元",
@@ -297,6 +303,13 @@ export const viewportToolbarItems: ViewportToolbarItemDefinition[] = [
     label: "反色",
     hint: viewportActionDefinitions.invert.hint,
     iconKey: "invert",
+  },
+  {
+    id: "imageLayout",
+    kind: "menu",
+    label: "图像布局",
+    hint: viewportToolbarMenuDefinitions.imageLayout.hint,
+    iconKey: "imageLayout",
   },
   {
     id: "layout",

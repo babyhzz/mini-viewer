@@ -12,6 +12,21 @@ export type OverlayTagKey =
   | "imageFileName"
   | "instanceNumber";
 
+export type ToolbarShortcutCommandId =
+  | "select"
+  | "pan"
+  | "windowLevel"
+  | "length"
+  | "polyline"
+  | "freehand"
+  | "angle"
+  | "rectangleRoi"
+  | "ellipseRoi"
+  | "circleRoi"
+  | "invert"
+  | "annotationList"
+  | "settings";
+
 export type OverlayFontWeight = "400" | "500" | "600" | "700";
 
 export interface OverlayTextStyle {
@@ -33,7 +48,21 @@ export interface ViewportOverlaySettings {
   corners: Record<ViewportCorner, OverlayCornerItemConfig[]>;
 }
 
+export interface ToolbarShortcutBinding {
+  code: string;
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+}
+
+export interface ToolbarShortcutSettings {
+  schemaVersion: 1;
+  bindings: Record<ToolbarShortcutCommandId, ToolbarShortcutBinding | null>;
+}
+
 export interface ViewerSettings {
   schemaVersion: 1;
   viewportOverlay: ViewportOverlaySettings;
+  toolbarShortcuts: ToolbarShortcutSettings;
 }
