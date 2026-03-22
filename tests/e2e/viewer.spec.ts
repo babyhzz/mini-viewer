@@ -441,6 +441,7 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     const viewportStage = page.getByTestId("viewport-stage");
     const imageLayoutCells = page.getByTestId("viewport-image-layout-cell");
+    const firstImageLayoutCanvas = page.getByTestId("viewport-image-layout-canvas").first();
     const frameCount = Number(
       (await viewportStage.getAttribute("data-frame-count")) ?? "0",
     );
@@ -469,6 +470,46 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(
       imageLayoutCells.first().getByTestId("viewport-image-layout-cell-frame-indicator"),
     ).toContainText(`[1]/[${frameCount}]`);
+    await expect(firstImageLayoutCanvas).toHaveAttribute(
+      "data-source-width",
+      /[1-9]\d*/,
+    );
+    await expect(firstImageLayoutCanvas).toHaveAttribute(
+      "data-source-height",
+      /[1-9]\d*/,
+    );
+
+    const firstCanvasAspectMetrics = await firstImageLayoutCanvas.evaluate(
+      (canvas) => {
+        const rect = canvas.getBoundingClientRect();
+        const cellRect =
+          canvas.parentElement?.getBoundingClientRect() ?? rect;
+        const sourceWidth = Number(canvas.getAttribute("data-source-width") ?? "0");
+        const sourceHeight = Number(
+          canvas.getAttribute("data-source-height") ?? "0",
+        );
+
+        return {
+          displayAspectRatio: rect.width / Math.max(rect.height, 1),
+          sourceAspectRatio: sourceWidth / Math.max(sourceHeight, 1),
+          widthFillRatio: rect.width / Math.max(cellRect.width, 1),
+          heightFillRatio: rect.height / Math.max(cellRect.height, 1),
+        };
+      },
+    );
+
+    expect(
+      Math.abs(
+        firstCanvasAspectMetrics.displayAspectRatio -
+          firstCanvasAspectMetrics.sourceAspectRatio,
+      ),
+    ).toBeLessThan(0.05);
+    expect(
+      Math.max(
+        firstCanvasAspectMetrics.widthFillRatio,
+        firstCanvasAspectMetrics.heightFillRatio,
+      ),
+    ).toBeGreaterThan(0.94);
 
     if (frameCount > 1) {
       const stageBox = await viewportStage.boundingBox();

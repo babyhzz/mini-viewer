@@ -8,6 +8,7 @@ import type {
 import { useEffect, useRef, useState } from "react";
 import { Spin } from "antd";
 
+import { BootstrapIcon } from "@/components/bootstrap-icon";
 import { initializeCornerstone } from "@/lib/cornerstone/init";
 import { toCornerstoneImageId } from "@/lib/cornerstone/image-id";
 import {
@@ -103,6 +104,16 @@ interface OverlayContextValueMap {
 
 type ViewportAnnotationCounts = Record<ViewportTool, number>;
 type ViewportCellSelectionState = "none" | "all" | "single";
+
+interface CanvasSourceDimensions {
+  width: number;
+  height: number;
+}
+
+interface ViewportCellSize {
+  width: number;
+  height: number;
+}
 
 const EMPTY_ANNOTATION_COUNTS: ViewportAnnotationCounts = {
   select: 0,
@@ -309,6 +320,36 @@ const VIEWPORT_IMAGE_LAYOUT_CELL_OVERLAY_TEST_IDS: Record<
   bottomRight: "viewport-image-layout-cell-frame-indicator",
 };
 
+function getCanvasSourceDimensions(
+  image:
+    | {
+        width?: unknown;
+        height?: unknown;
+        columns?: unknown;
+        rows?: unknown;
+      }
+    | null
+    | undefined,
+): CanvasSourceDimensions {
+  const width =
+    typeof image?.width === "number" && Number.isFinite(image.width)
+      ? image.width
+      : typeof image?.columns === "number" && Number.isFinite(image.columns)
+        ? image.columns
+        : 512;
+  const height =
+    typeof image?.height === "number" && Number.isFinite(image.height)
+      ? image.height
+      : typeof image?.rows === "number" && Number.isFinite(image.rows)
+        ? image.rows
+        : 512;
+
+  return {
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+  };
+}
+
 function buildOverlayContextValueMap(
   study: DicomStudyNode | null,
   series: DicomSeriesNode | null,
@@ -455,8 +496,54 @@ function ViewportImageLayoutCanvas({
   overlayValueMap,
   selectionState,
 }: ViewportImageLayoutCanvasProps) {
+  const cellRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hasError, setHasError] = useState(false);
+  const [sourceDimensions, setSourceDimensions] = useState<CanvasSourceDimensions>(
+    {
+      width: 512,
+      height: 512,
+    },
+  );
+  const [cellSize, setCellSize] = useState<ViewportCellSize>({
+    width: 0,
+    height: 0,
+  });
+  const [renderVersion, setRenderVersion] = useState(0);
+
+  useEffect(() => {
+    const cellElement = cellRef.current;
+
+    if (!cellElement) {
+      return;
+    }
+
+    const updateCellSize = () => {
+      const nextWidth = Math.round(cellElement.clientWidth);
+      const nextHeight = Math.round(cellElement.clientHeight);
+
+      setCellSize((previous) =>
+        previous.width === nextWidth && previous.height === nextHeight
+          ? previous
+          : {
+              width: nextWidth,
+              height: nextHeight,
+            },
+      );
+    };
+
+    updateCellSize();
+
+    const observer = new ResizeObserver(() => {
+      updateCellSize();
+    });
+
+    observer.observe(cellElement);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -472,29 +559,38 @@ function ViewportImageLayoutCanvas({
         const context = canvas.getContext("2d");
 
         context?.clearRect(0, 0, canvas.width, canvas.height);
+        setSourceDimensions({
+          width: 512,
+          height: 512,
+        });
         setHasError(false);
         return;
       }
 
       try {
         const { core } = await initializeCornerstone();
+        const imageId = toCornerstoneImageId(image.dicomUrl);
+        const loadedImage = await core.imageLoader.loadAndCacheImage(imageId);
+        const nextSourceDimensions = getCanvasSourceDimensions(loadedImage);
 
         if (cancelled || !canvasRef.current) {
           return;
         }
 
+        canvasRef.current.width = nextSourceDimensions.width;
+        canvasRef.current.height = nextSourceDimensions.height;
+
         await core.utilities.loadImageToCanvas({
           canvas: canvasRef.current,
-          imageId: toCornerstoneImageId(image.dicomUrl),
+          imageId,
           renderingEngineId: `viewport-image-layout-${viewportKey}-${cellIndex}`,
           thumbnail: true,
         });
 
-        canvasRef.current.style.width = "100%";
-        canvasRef.current.style.height = "100%";
-
         if (!cancelled) {
+          setSourceDimensions(nextSourceDimensions);
           setHasError(false);
+          setRenderVersion((previous) => previous + 1);
         }
       } catch (error) {
         console.error("Failed to render viewport image layout cell", error);
@@ -513,9 +609,36 @@ function ViewportImageLayoutCanvas({
   }, [cellIndex, image, viewportKey]);
 
   const statusLabel = hasError ? "ERR" : null;
+  const sourceAspectRatio = sourceDimensions.width / sourceDimensions.height;
+  const cellAspectRatio =
+    cellSize.width > 0 && cellSize.height > 0
+      ? cellSize.width / cellSize.height
+      : sourceAspectRatio;
+  const canvasDisplayStyle =
+    cellAspectRatio >= sourceAspectRatio
+      ? {
+          width: `${(sourceAspectRatio / cellAspectRatio) * 100}%`,
+          height: "100%",
+        }
+      : {
+          width: "100%",
+          height: `${(cellAspectRatio / sourceAspectRatio) * 100}%`,
+        };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    canvas.style.width = canvasDisplayStyle.width;
+    canvas.style.height = canvasDisplayStyle.height;
+  }, [canvasDisplayStyle.height, canvasDisplayStyle.width, renderVersion]);
 
   return (
     <div
+      ref={cellRef}
       className={`viewport-image-layout-cell${!image ? " is-empty" : ""}${hasError ? " is-error" : ""}${selectionState !== "none" ? " is-selected" : ""}`}
       data-testid="viewport-image-layout-cell"
       data-cell-index={cellIndex}
@@ -526,9 +649,13 @@ function ViewportImageLayoutCanvas({
     >
       <canvas
         ref={canvasRef}
+        data-testid="viewport-image-layout-canvas"
+        data-source-width={sourceDimensions.width}
+        data-source-height={sourceDimensions.height}
         className={`viewport-image-layout-canvas${invertEnabled ? " is-inverted" : ""}`}
-        width={512}
-        height={512}
+        width={sourceDimensions.width}
+        height={sourceDimensions.height}
+        style={canvasDisplayStyle}
       />
       {overlayValueMap ? (
         <ViewportOverlayLayer
@@ -1368,7 +1495,16 @@ export function StackViewport({
       ) : null}
       {status === "loading" ? (
         <div className="status-layer">
-          <Spin size="large" />
+          <Spin
+            size="large"
+            indicator={
+              <BootstrapIcon
+                name="arrow-repeat"
+                spin
+                className="app-spin-indicator"
+              />
+            }
+          />
         </div>
       ) : null}
       {status === "idle" ? (

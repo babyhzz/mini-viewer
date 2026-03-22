@@ -44,6 +44,36 @@ select {
   font: inherit;
 }
 
+.bootstrap-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.bootstrap-icon::before {
+  line-height: 1;
+}
+
+.bootstrap-icon.is-spin {
+  animation: bootstrap-icon-spin 0.9s linear infinite;
+}
+
+.app-spin-indicator {
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+}
+
+.app-spin-indicator.is-small {
+  font-size: 0.95rem;
+}
+
+@keyframes bootstrap-icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .viewer-page {
   height: 100dvh;
   min-height: 100dvh;
@@ -459,9 +489,8 @@ select {
   flex-shrink: 0;
 }
 
-.viewport-toolbar-icon svg {
-  width: 1em;
-  height: 1em;
+.viewport-toolbar-icon::before {
+  line-height: 1;
 }
 
 .viewport-utility-count {
@@ -663,6 +692,10 @@ select {
   transition:
     background 120ms ease,
     color 120ms ease;
+}
+
+.annotation-list-item-delete .bootstrap-icon {
+  font-size: 1rem;
 }
 
 .annotation-list-item-delete:hover,
@@ -1072,6 +1105,10 @@ select {
   padding: 0;
 }
 
+.viewer-settings-shortcut-icon-button .bootstrap-icon {
+  font-size: 0.92rem;
+}
+
 .viewer-settings-shortcut-empty {
   padding: 12px 0 4px;
 }
@@ -1217,12 +1254,18 @@ select {
   border: 1px solid var(--panel-border);
   border-radius: 0;
   background: #090c10;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
 }
 
 .viewport-stage.is-selected {
-  border-color: #3aa0ff;
-  box-shadow: inset 0 0 0 1px rgba(58, 160, 255, 0.16);
+  border-color: #58c7ff;
+  background: #081018;
+  box-shadow:
+    inset 0 0 0 1px rgba(88, 199, 255, 0.2),
+    0 0 0 1px rgba(88, 199, 255, 0.32);
 }
 
 .viewport-canvas {
@@ -1244,16 +1287,17 @@ select {
 
 .viewport-image-layout-grid {
   position: absolute;
-  inset: 0;
+  inset: 8px 18px 8px 8px;
   z-index: 1;
   display: grid;
-  gap: 1px;
-  background: #0d1218;
+  gap: 4px;
+  background: transparent;
 }
 
 .viewport-image-layout-cell {
   position: relative;
   overflow: hidden;
+  border: 1px solid rgba(37, 49, 63, 0.9);
   background: #05080c;
 }
 
@@ -1276,24 +1320,21 @@ select {
 
 .viewport-stage.is-selected
   .viewport-image-layout-cell[data-cell-empty="false"]:hover::after {
-  border-color: rgba(145, 210, 255, 0.28);
+  border-color: rgba(164, 218, 255, 0.42);
 }
 
 .viewport-image-layout-cell[data-cell-selection-state="all"]::after {
-  border-color: rgba(58, 160, 255, 0.34);
-  background: rgba(58, 160, 255, 0.03);
+  border-color: rgba(126, 154, 184, 0.72);
 }
 
 .viewport-image-layout-cell[data-cell-selection-state="single"]::after {
-  border-color: rgba(94, 184, 255, 0.92);
-  box-shadow: inset 0 0 0 1px rgba(94, 184, 255, 0.26);
-  background: rgba(94, 184, 255, 0.05);
+  border-color: #ffc247;
+  box-shadow: 0 0 0 1px rgba(255, 194, 71, 0.24);
 }
 
 .viewport-image-layout-canvas {
-  width: 100%;
-  height: 100%;
   display: block;
+  margin: 0 auto;
 }
 
 .viewport-image-layout-canvas.is-inverted {

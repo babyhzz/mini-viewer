@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LoadingOutlined } from "@ant-design/icons";
 import { Modal, Spin } from "antd";
 
 import { AnnotationListDrawer } from "@/components/annotation-list-drawer";
+import { BootstrapIcon } from "@/components/bootstrap-icon";
 import type { ViewportAnnotationsState } from "@/components/stack-viewport";
 import { StackViewport } from "@/components/stack-viewport";
 import { ThumbnailCanvas } from "@/components/thumbnail-canvas";
@@ -619,7 +619,13 @@ export function DicomViewerApp() {
         <section className="screen-loader animate-in">
           <div className="screen-loader-card">
             <Spin
-              indicator={<LoadingOutlined style={{ fontSize: 28 }} spin />}
+              indicator={
+                <BootstrapIcon
+                  name="arrow-repeat"
+                  spin
+                  className="app-spin-indicator"
+                />
+              }
               size="large"
             />
             <div className="screen-loader-copy">

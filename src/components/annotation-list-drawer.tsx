@@ -1,8 +1,8 @@
 "use client";
 
-import { DeleteOutlined } from "@ant-design/icons";
 import { Button, Drawer, Empty, Tag } from "antd";
 
+import { BootstrapIcon } from "@/components/bootstrap-icon";
 import type { ViewportAnnotationEntry } from "@/lib/tools/cornerstone-tool-adapter";
 
 interface AnnotationListDrawerProps {
@@ -31,6 +31,7 @@ export function AnnotationListDrawer({
       placement="right"
       open={open}
       width={420}
+      closeIcon={<BootstrapIcon name="x-lg" />}
       onClose={onClose}
       footer={
         <div className="annotation-list-footer">
@@ -109,7 +110,7 @@ export function AnnotationListDrawer({
                 data-testid={`annotation-list-delete-${annotation.annotationUID}`}
                 onClick={() => onDeleteAnnotation(annotation.annotationUID)}
               >
-                <DeleteOutlined />
+                <BootstrapIcon name="trash3" />
               </button>
             </div>
           ))}

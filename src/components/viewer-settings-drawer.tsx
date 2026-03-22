@@ -1,17 +1,6 @@
 "use client";
 
 import {
-  ArrowDownOutlined,
-  ArrowUpOutlined,
-  DownOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  RightOutlined,
-  SaveOutlined,
-} from "@ant-design/icons";
-import {
   Alert,
   Button,
   Card,
@@ -29,6 +18,7 @@ import {
 import type { Color } from "antd/es/color-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { BootstrapIcon } from "@/components/bootstrap-icon";
 import {
   cloneViewerSettings,
   createDefaultViewerSettings,
@@ -508,6 +498,7 @@ export function ViewerSettingsDrawer({
           placement="right"
           open={open}
           width={1040}
+          closeIcon={<BootstrapIcon name="x-lg" />}
           onClose={onClose}
           styles={{
             body: {
@@ -521,6 +512,7 @@ export function ViewerSettingsDrawer({
                   <Alert
                     type="error"
                     showIcon
+                    icon={<BootstrapIcon name="exclamation-circle" />}
                     message={saveError}
                     className="viewer-settings-alert"
                   />
@@ -535,7 +527,7 @@ export function ViewerSettingsDrawer({
                   关闭
                 </Button>
                 <Button
-                  icon={<ReloadOutlined />}
+                  icon={<BootstrapIcon name="arrow-clockwise" />}
                   disabled={!differsFromDefault || isSaving}
                   onClick={() => {
                     setDraftSettings(cloneViewerSettings(defaultSettings));
@@ -547,7 +539,7 @@ export function ViewerSettingsDrawer({
                 </Button>
                 <Button
                   type="primary"
-                  icon={<SaveOutlined />}
+                  icon={<BootstrapIcon name="floppy" />}
                   loading={isSaving}
                   disabled={!hasChanges}
                   onClick={handleSave}
@@ -635,7 +627,7 @@ export function ViewerSettingsDrawer({
                           </div>
                           <Button
                             size="small"
-                            icon={<PlusOutlined />}
+                            icon={<BootstrapIcon name="plus-lg" />}
                             onClick={() => handleAddItem(corner)}
                           >
                             添加
@@ -664,7 +656,7 @@ export function ViewerSettingsDrawer({
                                     <Button
                                       size="small"
                                       type="text"
-                                      icon={<ArrowUpOutlined />}
+                                      icon={<BootstrapIcon name="arrow-up" />}
                                       disabled={itemIndex === 0}
                                       title="上移"
                                       onClick={() =>
@@ -674,7 +666,7 @@ export function ViewerSettingsDrawer({
                                     <Button
                                       size="small"
                                       type="text"
-                                      icon={<ArrowDownOutlined />}
+                                      icon={<BootstrapIcon name="arrow-down" />}
                                       disabled={itemIndex === items.length - 1}
                                       title="下移"
                                       onClick={() =>
@@ -684,7 +676,7 @@ export function ViewerSettingsDrawer({
                                     <Button
                                       size="small"
                                       type="text"
-                                      icon={<EditOutlined />}
+                                      icon={<BootstrapIcon name="pencil-square" />}
                                       title="编辑"
                                       data-testid={`viewer-settings-edit-${corner}-${itemIndex}`}
                                       onClick={() => {
@@ -699,7 +691,7 @@ export function ViewerSettingsDrawer({
                                       size="small"
                                       type="text"
                                       danger
-                                      icon={<DeleteOutlined />}
+                                      icon={<BootstrapIcon name="trash3" />}
                                       title="删除"
                                       onClick={() =>
                                         handleRemoveItem(corner, itemIndex)
@@ -717,7 +709,7 @@ export function ViewerSettingsDrawer({
                           >
                             <Button
                               size="small"
-                              icon={<PlusOutlined />}
+                              icon={<BootstrapIcon name="plus-lg" />}
                               onClick={() => handleAddItem(corner)}
                             >
                               添加第一条
@@ -794,6 +786,7 @@ export function ViewerSettingsDrawer({
                   <Alert
                     type="info"
                     showIcon
+                    icon={<BootstrapIcon name="keyboard" />}
                     className="viewer-settings-shortcut-capture-alert"
                     message={`正在录制 ${TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.find((definition) => definition.id === recordingShortcutId)?.label ?? "快捷键"}`}
                     description="请按下要绑定的组合键。Esc 取消，Backspace/Delete 清空当前绑定。"
@@ -837,7 +830,11 @@ export function ViewerSettingsDrawer({
                               </span>
                             </span>
                             <span className="viewer-settings-shortcut-group-icon">
-                              {isCollapsed ? <RightOutlined /> : <DownOutlined />}
+                              {isCollapsed ? (
+                                <BootstrapIcon name="caret-right-fill" />
+                              ) : (
+                                <BootstrapIcon name="chevron-down" />
+                              )}
                             </span>
                           </button>
 
@@ -907,7 +904,7 @@ export function ViewerSettingsDrawer({
                                       <Button
                                         size="small"
                                         type="text"
-                                        icon={<ReloadOutlined />}
+                                        icon={<BootstrapIcon name="arrow-clockwise" />}
                                         className="viewer-settings-shortcut-icon-button"
                                         data-testid={`viewer-settings-shortcut-reset-${definition.id}`}
                                         aria-label={`恢复 ${definition.label} 默认绑定`}
@@ -921,7 +918,7 @@ export function ViewerSettingsDrawer({
                                         size="small"
                                         type="text"
                                         danger
-                                        icon={<DeleteOutlined />}
+                                        icon={<BootstrapIcon name="trash3" />}
                                         className="viewer-settings-shortcut-icon-button"
                                         data-testid={`viewer-settings-shortcut-clear-${definition.id}`}
                                         aria-label={`清空 ${definition.label} 绑定`}
@@ -960,6 +957,7 @@ export function ViewerSettingsDrawer({
           open
           title={`编辑${VIEWPORT_CORNER_LABELS[editingTarget.corner]}信息项`}
           destroyOnHidden
+          closeIcon={<BootstrapIcon name="x-lg" />}
           onCancel={() => setEditingTarget(null)}
           footer={
             <Button
