@@ -5,6 +5,16 @@ export interface DicomImageNode {
   filePath: string;
   dicomUrl: string;
   instanceNumber?: number;
+  imagePositionPatient?: [number, number, number];
+  imageOrientationPatient?: [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  frameOfReferenceUID?: string;
 }
 
 export interface DicomSeriesNode {
@@ -29,4 +39,25 @@ export interface DicomStudyNode {
 export interface DicomHierarchyResponse {
   studies: DicomStudyNode[];
   generatedAt: string;
+}
+
+export interface DicomTagNode {
+  id: string;
+  nodeType: "element" | "item";
+  tag: string;
+  displayTag: string;
+  name: string;
+  keyword: string | null;
+  vr: string;
+  value: string | null;
+  length: number | null;
+  children: DicomTagNode[];
+}
+
+export interface DicomTagResponse {
+  filePath: string;
+  fileName: string;
+  generatedAt: string;
+  tagCount: number;
+  tags: DicomTagNode[];
 }

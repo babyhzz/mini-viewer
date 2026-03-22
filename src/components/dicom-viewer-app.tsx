@@ -1,11 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal, Spin } from "antd";
 
 import { AnnotationListDrawer } from "@/components/annotation-list-drawer";
 import { BootstrapIcon } from "@/components/bootstrap-icon";
-import type { ViewportAnnotationsState } from "@/components/stack-viewport";
+import { MprViewport } from "@/components/mpr-viewport";
+import {
+  createEmptyViewportAnnotationsState,
+  type ViewportAnnotationsState,
+} from "@/components/viewport-annotations";
 import { StackViewport } from "@/components/stack-viewport";
 import { ThumbnailCanvas } from "@/components/thumbnail-canvas";
 import { ViewerSettingsDrawer } from "@/components/viewer-settings-drawer";
@@ -23,10 +27,17 @@ import type { ViewportAnnotationCommand } from "@/lib/tools/cornerstone-tool-ada
 import {
   createDefaultViewportToolGroupSelections,
   getViewportToolGroupId,
+  isViewportToolSupportedInMpr,
   type ViewportAction,
   type ViewportTool,
   type ViewportToolGroupSelections,
 } from "@/lib/tools/registry";
+import {
+  DEFAULT_VIEWPORT_MODE,
+  DEFAULT_VIEWPORT_MPR_LAYOUT_ID,
+  type ViewportMode,
+  type ViewportMprLayoutId,
+} from "@/lib/viewports/mpr-layouts";
 import {
   DEFAULT_VIEWPORT_LAYOUT_ID,
   getViewportLayoutDefinition,
@@ -38,6 +49,23 @@ import {
   getViewportImageLayoutDefinition,
   type ViewportImageLayoutId,
 } from "@/lib/viewports/image-layouts";
+import {
+  areImagesSliceAligned,
+  DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE,
+  createCrossStudyCalibration,
+  findCrossStudySyncedFrameIndex,
+  findNearestImageIndexBySlicePosition,
+  getImageSliceNormal,
+  getImageSliceScalar,
+  getSequenceSyncPairKey,
+  hasEnabledViewportSequenceSync,
+  toggleViewportSequenceSyncType,
+  type CrossStudyCalibration,
+  type StackViewportRuntimeState,
+  type ViewportSequenceSyncCommand,
+  type ViewportSequenceSyncState,
+  type ViewportSequenceSyncType,
+} from "@/lib/viewports/sequence-sync";
 import type {
   DicomHierarchyResponse,
   DicomSeriesNode,
@@ -80,13 +108,6 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
   }
 
   return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
-}
-
-function createEmptyViewportAnnotationsState(): ViewportAnnotationsState {
-  return {
-    entries: [],
-    selectedAnnotationUIDs: [],
-  };
 }
 
 function getOrderedSeriesEntries(
@@ -144,6 +165,30 @@ function alignViewportImageLayoutState(
   );
 }
 
+function alignViewportModeState(
+  viewportIds: string[],
+  previousState: Record<string, ViewportMode>,
+) {
+  return viewportIds.reduce<Record<string, ViewportMode>>((nextState, viewportId) => {
+    nextState[viewportId] = previousState[viewportId] ?? DEFAULT_VIEWPORT_MODE;
+    return nextState;
+  }, {});
+}
+
+function alignViewportMprLayoutState(
+  viewportIds: string[],
+  previousState: Record<string, ViewportMprLayoutId>,
+) {
+  return viewportIds.reduce<Record<string, ViewportMprLayoutId>>(
+    (nextState, viewportId) => {
+      nextState[viewportId] =
+        previousState[viewportId] ?? DEFAULT_VIEWPORT_MPR_LAYOUT_ID;
+      return nextState;
+    },
+    {},
+  );
+}
+
 function alignViewportCellSelectionState(
   viewportIds: string[],
   previousState: Record<string, ViewportCellSelection>,
@@ -155,6 +200,30 @@ function alignViewportCellSelectionState(
     },
     {},
   );
+}
+
+function alignViewportSequenceSyncState(
+  viewportIds: string[],
+  previousState: Record<string, ViewportSequenceSyncState>,
+) {
+  return viewportIds.reduce<Record<string, ViewportSequenceSyncState>>(
+    (nextState, viewportId) => {
+      nextState[viewportId] =
+        previousState[viewportId] ?? DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE;
+      return nextState;
+    },
+    {},
+  );
+}
+
+function alignViewportNullableStateMap<T>(
+  viewportIds: string[],
+  previousState: Record<string, T | null>,
+) {
+  return viewportIds.reduce<Record<string, T | null>>((nextState, viewportId) => {
+    nextState[viewportId] = previousState[viewportId] ?? null;
+    return nextState;
+  }, {});
 }
 
 function buildViewportSeriesAssignments(
@@ -211,6 +280,10 @@ function buildViewportSeriesAssignments(
 
 export function DicomViewerApp() {
   const annotationCommandIdRef = useRef(0);
+  const sequenceSyncCommandIdRef = useRef(0);
+  const manualSequenceSyncRequestIdRef = useRef(0);
+  const processedStackSyncTokenByViewportRef = useRef<Record<string, number>>({});
+  const processedManualSequenceSyncRequestIdRef = useRef(0);
   const [hierarchy, setHierarchy] = useState<DicomHierarchyResponse | null>(null);
   const [viewerSettings, setViewerSettings] = useState<ViewerSettings>(
     createDefaultViewerSettings(),
@@ -243,10 +316,30 @@ export function DicomViewerApp() {
   const [viewportImageLayoutIdById, setViewportImageLayoutIdById] = useState<
     Record<string, ViewportImageLayoutId>
   >({});
+  const [viewportModeById, setViewportModeById] = useState<
+    Record<string, ViewportMode>
+  >({});
+  const [viewportMprLayoutIdById, setViewportMprLayoutIdById] = useState<
+    Record<string, ViewportMprLayoutId>
+  >({});
   const [viewportCellSelectionById, setViewportCellSelectionById] = useState<
     Record<string, ViewportCellSelection>
   >({});
+  const [viewportSequenceSyncStateById, setViewportSequenceSyncStateById] =
+    useState<Record<string, ViewportSequenceSyncState>>({});
+  const [stackViewportRuntimeStateById, setStackViewportRuntimeStateById] =
+    useState<Record<string, StackViewportRuntimeState | null>>({});
+  const [viewportSequenceSyncCommandById, setViewportSequenceSyncCommandById] =
+    useState<Record<string, ViewportSequenceSyncCommand | null>>({});
+  const [crossStudyCalibrationByPairKey, setCrossStudyCalibrationByPairKey] =
+    useState<Record<string, CrossStudyCalibration>>({});
+  const [manualSequenceSyncRequest, setManualSequenceSyncRequest] = useState<{
+    id: number;
+    sourceViewportId: string;
+  } | null>(null);
   const [annotationListOpen, setAnnotationListOpen] = useState(false);
+  const [dicomTagDialogViewportId, setDicomTagDialogViewportId] =
+    useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const viewportIds = getViewportLayoutSlotIds(viewportLayoutId);
@@ -266,21 +359,226 @@ export function DicomViewerApp() {
       ? [maximizedViewportId]
       : viewportIds;
   const orderedSeriesEntries = getOrderedSeriesEntries(hierarchy);
-  const seriesEntryMap = new Map(
-    orderedSeriesEntries.map((entry) => [entry.key, entry] as const),
+  const seriesEntryMap = useMemo(
+    () => new Map(orderedSeriesEntries.map((entry) => [entry.key, entry] as const)),
+    [orderedSeriesEntries],
   );
   const activeViewportAnnotationsState =
     viewportAnnotationsStateById[selectedViewportId] ??
     createEmptyViewportAnnotationsState();
   const activeViewportInvertEnabled =
     viewportInvertEnabled[selectedViewportId] ?? false;
+  const selectedViewportMode =
+    viewportModeById[selectedViewportId] ?? DEFAULT_VIEWPORT_MODE;
   const activeViewportImageLayoutId =
     viewportImageLayoutIdById[selectedViewportId] ??
     DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID;
+  const activeViewportMprLayoutId =
+    viewportMprLayoutIdById[selectedViewportId] ??
+    DEFAULT_VIEWPORT_MPR_LAYOUT_ID;
   const activeViewportImageLayout = getViewportImageLayoutDefinition(
     activeViewportImageLayoutId,
   );
-  const activeViewportHasMontageLayout = activeViewportImageLayout.cellCount > 1;
+  const activeViewportHasMontageLayout =
+    selectedViewportMode === "stack" && activeViewportImageLayout.cellCount > 1;
+  const activeViewportSequenceSyncState =
+    viewportSequenceSyncStateById[selectedViewportId] ??
+    DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE;
+  const activeViewportCrossStudyCalibrationCount = Object.values(
+    crossStudyCalibrationByPairKey,
+  ).filter(
+    (calibration) =>
+      calibration.leftViewportId === selectedViewportId ||
+      calibration.rightViewportId === selectedViewportId,
+  ).length;
+
+  const dispatchSequenceSyncFromViewport = useCallback(
+    (sourceViewportId: string) => {
+      const sourceSyncState =
+        viewportSequenceSyncStateById[sourceViewportId] ??
+        DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE;
+
+      if (!hasEnabledViewportSequenceSync(sourceSyncState)) {
+        return;
+      }
+
+      if ((viewportModeById[sourceViewportId] ?? DEFAULT_VIEWPORT_MODE) !== "stack") {
+        return;
+      }
+
+      const sourceRuntimeState = stackViewportRuntimeStateById[sourceViewportId];
+      const sourceSeriesKey = viewportSeriesAssignments[sourceViewportId];
+      const sourceSeriesEntry =
+        sourceSeriesKey != null ? seriesEntryMap.get(sourceSeriesKey) ?? null : null;
+
+      if (
+        !sourceRuntimeState ||
+        sourceRuntimeState.status !== "ready" ||
+        !sourceSeriesEntry
+      ) {
+        return;
+      }
+
+      const sourceImage =
+        sourceSeriesEntry.series.images[sourceRuntimeState.currentFrameIndex - 1] ?? null;
+
+      if (!sourceImage) {
+        return;
+      }
+
+      let nextCalibrationMap: Record<string, CrossStudyCalibration> | null = null;
+      const nextSyncCommands: Record<string, ViewportSequenceSyncCommand | null> = {};
+
+      for (const targetViewportId of viewportIds) {
+        if (targetViewportId === sourceViewportId) {
+          continue;
+        }
+
+        if ((viewportModeById[targetViewportId] ?? DEFAULT_VIEWPORT_MODE) !== "stack") {
+          continue;
+        }
+
+        const targetRuntimeState = stackViewportRuntimeStateById[targetViewportId];
+        const targetSeriesKey = viewportSeriesAssignments[targetViewportId];
+        const targetSeriesEntry =
+          targetSeriesKey != null ? seriesEntryMap.get(targetSeriesKey) ?? null : null;
+        const targetSyncState =
+          viewportSequenceSyncStateById[targetViewportId] ??
+          DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE;
+
+        if (
+          !targetRuntimeState ||
+          targetRuntimeState.status !== "ready" ||
+          !targetSeriesEntry ||
+          !hasEnabledViewportSequenceSync(targetSyncState)
+        ) {
+          continue;
+        }
+
+        let targetFrameIndex: number | null = null;
+        let calibrationPairKey: string | undefined;
+        let syncType: ViewportSequenceSyncType | null = null;
+        const isSameStudy =
+          sourceSeriesEntry.study.studyId === targetSeriesEntry.study.studyId;
+
+        if (isSameStudy && sourceSyncState.sameStudy && targetSyncState.sameStudy) {
+
+          const targetReferenceImage =
+            targetSeriesEntry.series.images[targetRuntimeState.currentFrameIndex - 1] ??
+            targetSeriesEntry.series.images[0] ??
+            null;
+          const targetNormal = getImageSliceNormal(targetReferenceImage);
+          const sourceSliceScalar = getImageSliceScalar(sourceImage, targetNormal);
+
+          if (
+            sourceSliceScalar == null ||
+            !areImagesSliceAligned(sourceImage, targetReferenceImage)
+          ) {
+            continue;
+          }
+
+          targetFrameIndex = findNearestImageIndexBySlicePosition(
+            targetSeriesEntry.series.images,
+            sourceSliceScalar,
+            targetNormal,
+          );
+          syncType = "sameStudy";
+        } else if (
+          !isSameStudy &&
+          sourceSyncState.crossStudy &&
+          targetSyncState.crossStudy
+        ) {
+
+          const pairKey = getSequenceSyncPairKey(sourceViewportId, targetViewportId);
+          const existingCalibration = crossStudyCalibrationByPairKey[pairKey];
+          const canReuseExistingCalibration =
+            existingCalibration &&
+            existingCalibration.leftSeriesKey ===
+              viewportSeriesAssignments[existingCalibration.leftViewportId] &&
+            existingCalibration.rightSeriesKey ===
+              viewportSeriesAssignments[existingCalibration.rightViewportId];
+          const targetImage =
+            targetSeriesEntry.series.images[targetRuntimeState.currentFrameIndex - 1] ??
+            null;
+          const calibration =
+            canReuseExistingCalibration && existingCalibration
+              ? existingCalibration
+              : createCrossStudyCalibration({
+                  leftViewportId: sourceViewportId,
+                  rightViewportId: targetViewportId,
+                  leftStudyId: sourceSeriesEntry.study.studyId,
+                  rightStudyId: targetSeriesEntry.study.studyId,
+                  leftSeriesKey: sourceSeriesKey ?? "",
+                  rightSeriesKey: targetSeriesKey ?? "",
+                  leftFrameIndex: sourceRuntimeState.currentFrameIndex,
+                  rightFrameIndex: targetRuntimeState.currentFrameIndex,
+                  leftImage: sourceImage,
+                  rightImage: targetImage,
+                });
+
+          if (!calibration) {
+            continue;
+          }
+
+          if (!canReuseExistingCalibration || !existingCalibration) {
+            nextCalibrationMap = nextCalibrationMap ?? {
+              ...crossStudyCalibrationByPairKey,
+            };
+            nextCalibrationMap[pairKey] = calibration;
+          }
+
+          calibrationPairKey = calibration.pairKey;
+          targetFrameIndex = findCrossStudySyncedFrameIndex({
+            sourceViewportId,
+            sourceImage,
+            targetImages: targetSeriesEntry.series.images,
+            calibration,
+          });
+          syncType = "crossStudy";
+        }
+
+        if (
+          !syncType ||
+          !targetFrameIndex ||
+          targetFrameIndex === targetRuntimeState.currentFrameIndex
+        ) {
+          continue;
+        }
+
+        sequenceSyncCommandIdRef.current += 1;
+        nextSyncCommands[targetViewportId] = {
+          id: sequenceSyncCommandIdRef.current,
+          targetViewportKey: targetViewportId,
+          sourceViewportKey: sourceViewportId,
+          frameIndex: targetFrameIndex,
+          syncType,
+          calibrationPairKey,
+        };
+      }
+
+      if (nextCalibrationMap) {
+        setCrossStudyCalibrationByPairKey(nextCalibrationMap);
+      }
+
+      if (!Object.keys(nextSyncCommands).length) {
+        return;
+      }
+
+      setViewportSequenceSyncCommandById((previous) => ({
+        ...previous,
+        ...nextSyncCommands,
+      }));
+    },
+    [
+      crossStudyCalibrationByPairKey,
+      seriesEntryMap,
+      stackViewportRuntimeStateById,
+      viewportIds,
+      viewportModeById,
+      viewportSequenceSyncStateById,
+      viewportSeriesAssignments,
+    ],
+  );
 
   const handleViewportSelect = useCallback((viewportId: string) => {
     setSelectedViewportId(viewportId);
@@ -315,7 +613,16 @@ export function DicomViewerApp() {
 
   const handleViewportToolChange = useCallback(
     (tool: ViewportTool) => {
-      if (activeViewportHasMontageLayout && tool !== "select") {
+      if (selectedViewportMode === "mpr" && !isViewportToolSupportedInMpr(tool)) {
+        setActiveViewportTool("select");
+        return;
+      }
+
+      if (
+        selectedViewportMode === "stack" &&
+        activeViewportHasMontageLayout &&
+        tool !== "select"
+      ) {
         setViewportImageLayoutIdById((previous) => ({
           ...previous,
           [selectedViewportId]: DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID,
@@ -335,7 +642,7 @@ export function DicomViewerApp() {
         [toolGroupId]: tool,
       }));
     },
-    [activeViewportHasMontageLayout, selectedViewportId],
+    [activeViewportHasMontageLayout, selectedViewportId, selectedViewportMode],
   );
 
   const handleViewportLayoutChange = (layoutId: ViewportLayoutId) => {
@@ -344,6 +651,10 @@ export function DicomViewerApp() {
   };
 
   const handleViewportImageLayoutChange = (layoutId: ViewportImageLayoutId) => {
+    if (selectedViewportMode !== "stack") {
+      return;
+    }
+
     setViewportImageLayoutIdById((previous) => ({
       ...previous,
       [selectedViewportId]: layoutId,
@@ -357,6 +668,78 @@ export function DicomViewerApp() {
       setActiveViewportTool("select");
     }
   };
+
+  const handleViewportMprLayoutChange = useCallback(
+    (layoutId: ViewportMprLayoutId | "off") => {
+      if (layoutId === "off") {
+        setViewportModeById((previous) => ({
+          ...previous,
+          [selectedViewportId]: "stack",
+        }));
+        return;
+      }
+
+      setViewportModeById((previous) => ({
+        ...previous,
+        [selectedViewportId]: "mpr",
+      }));
+      setViewportSequenceSyncStateById((previous) => ({
+        ...previous,
+        [selectedViewportId]: DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE,
+      }));
+      setViewportMprLayoutIdById((previous) => ({
+        ...previous,
+        [selectedViewportId]: layoutId,
+      }));
+      setViewportCellSelectionById((previous) => ({
+        ...previous,
+        [selectedViewportId]: "all",
+      }));
+
+      if (!isViewportToolSupportedInMpr(activeViewportTool)) {
+        setActiveViewportTool("select");
+      }
+    },
+    [activeViewportTool, selectedViewportId],
+  );
+
+  const handleViewportSequenceSyncToggle = useCallback(
+    (syncType: ViewportSequenceSyncType) => {
+      if (selectedViewportMode !== "stack") {
+        return;
+      }
+
+      setViewportSequenceSyncStateById((previous) => ({
+        ...previous,
+        [selectedViewportId]: toggleViewportSequenceSyncType(
+          previous[selectedViewportId],
+          syncType,
+        ),
+      }));
+      manualSequenceSyncRequestIdRef.current += 1;
+      setManualSequenceSyncRequest({
+        id: manualSequenceSyncRequestIdRef.current,
+        sourceViewportId: selectedViewportId,
+      });
+    },
+    [selectedViewportId, selectedViewportMode],
+  );
+
+  const handleViewportSequenceSyncClear = useCallback(() => {
+    if (selectedViewportMode !== "stack") {
+      return;
+    }
+
+    setViewportSequenceSyncStateById((previous) => ({
+      ...previous,
+      [selectedViewportId]: DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE,
+    }));
+    manualSequenceSyncRequestIdRef.current += 1;
+    setManualSequenceSyncRequest({
+      id: manualSequenceSyncRequestIdRef.current,
+      sourceViewportId: selectedViewportId,
+    });
+  }, [selectedViewportId, selectedViewportMode]);
 
   const handleViewportToggleMaximize = (viewportId: string) => {
     handleViewportSelect(viewportId);
@@ -384,9 +767,18 @@ export function DicomViewerApp() {
         return;
       }
 
+      if (action === "dicomTag") {
+        setDicomTagDialogViewportId(selectedViewportId);
+        return;
+      }
+
+      if (selectedViewportMode === "mpr") {
+        return;
+      }
+
       setAnnotationListOpen(true);
     },
-    [selectedViewportId],
+    [selectedViewportId, selectedViewportMode],
   );
 
   const handleDeleteSelectedAnnotations = () => {
@@ -510,7 +902,7 @@ export function DicomViewerApp() {
         return;
       }
 
-      if (settingsOpen || annotationListOpen) {
+      if (settingsOpen || annotationListOpen || dicomTagDialogViewportId) {
         return;
       }
 
@@ -563,6 +955,7 @@ export function DicomViewerApp() {
     };
   }, [
     annotationListOpen,
+    dicomTagDialogViewportId,
     handleViewportAction,
     handleViewportToolChange,
     orderedSeriesEntries.length,
@@ -592,8 +985,26 @@ export function DicomViewerApp() {
     setViewportImageLayoutIdById((previous) =>
       alignViewportImageLayoutState(nextViewportIds, previous),
     );
+    setViewportModeById((previous) =>
+      alignViewportModeState(nextViewportIds, previous),
+    );
+    setViewportMprLayoutIdById((previous) =>
+      alignViewportMprLayoutState(nextViewportIds, previous),
+    );
     setViewportCellSelectionById((previous) =>
       alignViewportCellSelectionState(nextViewportIds, previous),
+    );
+    setViewportSequenceSyncStateById((previous) =>
+      alignViewportSequenceSyncState(nextViewportIds, previous),
+    );
+    setStackViewportRuntimeStateById((previous) =>
+      alignViewportNullableStateMap(nextViewportIds, previous),
+    );
+    setViewportSequenceSyncCommandById((previous) =>
+      alignViewportNullableStateMap(nextViewportIds, previous),
+    );
+    setDicomTagDialogViewportId((previous) =>
+      previous && nextViewportIds.includes(previous) ? previous : null,
     );
     setSelectedViewportId((previous) =>
       nextViewportIds.includes(previous)
@@ -606,12 +1017,116 @@ export function DicomViewerApp() {
   }, [hierarchy, viewportLayoutId]);
 
   useEffect(() => {
-    if (!activeViewportHasMontageLayout || activeViewportTool === "select") {
+    setCrossStudyCalibrationByPairKey((previous) => {
+      const nextEntries = Object.values(previous).filter((calibration) => {
+        const leftViewportMode =
+          viewportModeById[calibration.leftViewportId] ?? DEFAULT_VIEWPORT_MODE;
+        const rightViewportMode =
+          viewportModeById[calibration.rightViewportId] ?? DEFAULT_VIEWPORT_MODE;
+        const leftSyncState =
+          viewportSequenceSyncStateById[calibration.leftViewportId] ??
+          DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE;
+        const rightSyncState =
+          viewportSequenceSyncStateById[calibration.rightViewportId] ??
+          DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE;
+        const leftSeriesKey = viewportSeriesAssignments[calibration.leftViewportId];
+        const rightSeriesKey = viewportSeriesAssignments[calibration.rightViewportId];
+
+        return (
+          leftViewportMode === "stack" &&
+          rightViewportMode === "stack" &&
+          leftSyncState.crossStudy &&
+          rightSyncState.crossStudy &&
+          leftSeriesKey === calibration.leftSeriesKey &&
+          rightSeriesKey === calibration.rightSeriesKey
+        );
+      });
+
+      if (nextEntries.length === Object.keys(previous).length) {
+        return previous;
+      }
+
+      return nextEntries.reduce<Record<string, CrossStudyCalibration>>(
+        (nextMap, calibration) => {
+          nextMap[calibration.pairKey] = calibration;
+          return nextMap;
+        },
+        {},
+      );
+    });
+  }, [viewportModeById, viewportSequenceSyncStateById, viewportSeriesAssignments]);
+
+  useEffect(() => {
+    if (
+      selectedViewportMode === "mpr" &&
+      !isViewportToolSupportedInMpr(activeViewportTool)
+    ) {
+      setActiveViewportTool("select");
+      return;
+    }
+
+    if (
+      selectedViewportMode !== "stack" ||
+      !activeViewportHasMontageLayout ||
+      activeViewportTool === "select"
+    ) {
       return;
     }
 
     setActiveViewportTool("select");
-  }, [activeViewportHasMontageLayout, activeViewportTool, selectedViewportId]);
+  }, [
+    activeViewportHasMontageLayout,
+    activeViewportTool,
+    selectedViewportId,
+    selectedViewportMode,
+  ]);
+
+  useEffect(() => {
+    for (const [viewportId, runtimeState] of Object.entries(
+      stackViewportRuntimeStateById,
+    )) {
+      if (!runtimeState) {
+        delete processedStackSyncTokenByViewportRef.current[viewportId];
+      }
+    }
+  }, [stackViewportRuntimeStateById]);
+
+  useEffect(() => {
+    for (const viewportId of viewportIds) {
+      const runtimeState = stackViewportRuntimeStateById[viewportId];
+
+      if (!runtimeState || runtimeState.lastChangeSource === "sync") {
+        continue;
+      }
+
+      const lastProcessedToken =
+        processedStackSyncTokenByViewportRef.current[viewportId] ?? 0;
+
+      if (runtimeState.lastChangeToken <= lastProcessedToken) {
+        continue;
+      }
+
+      processedStackSyncTokenByViewportRef.current[viewportId] =
+        runtimeState.lastChangeToken;
+      dispatchSequenceSyncFromViewport(viewportId);
+    }
+  }, [dispatchSequenceSyncFromViewport, stackViewportRuntimeStateById, viewportIds]);
+
+  useEffect(() => {
+    if (!manualSequenceSyncRequest) {
+      return;
+    }
+
+    if (
+      manualSequenceSyncRequest.id <=
+      processedManualSequenceSyncRequestIdRef.current
+    ) {
+      return;
+    }
+
+    processedManualSequenceSyncRequestIdRef.current = manualSequenceSyncRequest.id;
+    dispatchSequenceSyncFromViewport(manualSequenceSyncRequest.sourceViewportId);
+  }, [dispatchSequenceSyncFromViewport, manualSequenceSyncRequest]);
 
   if (loading) {
     return (
@@ -699,6 +1214,10 @@ export function DicomViewerApp() {
                                 ...previous,
                                 [selectedViewportId]: "all",
                               }));
+                              setViewportSequenceSyncCommandById((previous) => ({
+                                ...previous,
+                                [selectedViewportId]: null,
+                              }));
                               setViewportAnnotationsStateById((previous) => ({
                                 ...previous,
                                 [selectedViewportId]:
@@ -736,8 +1255,12 @@ export function DicomViewerApp() {
           <ViewportToolbar
             activeTool={activeViewportTool}
             groupSelections={viewportToolGroupSelections}
+            viewportMode={selectedViewportMode}
             layoutId={effectiveViewportLayoutId}
             imageLayoutId={activeViewportImageLayoutId}
+            mprLayoutId={activeViewportMprLayoutId}
+            sequenceSyncState={activeViewportSequenceSyncState}
+            crossStudyCalibrationCount={activeViewportCrossStudyCalibrationCount}
             invertEnabled={activeViewportInvertEnabled}
             annotationCount={activeViewportAnnotationsState.entries.length}
             selectedAnnotationCount={
@@ -746,6 +1269,9 @@ export function DicomViewerApp() {
             onToolChange={handleViewportToolChange}
             onLayoutChange={handleViewportLayoutChange}
             onImageLayoutChange={handleViewportImageLayoutChange}
+            onMprLayoutChange={handleViewportMprLayoutChange}
+            onSequenceSyncToggle={handleViewportSequenceSyncToggle}
+            onSequenceSyncClear={handleViewportSequenceSyncClear}
             onAction={handleViewportAction}
             onAnnotationManageAction={handleAnnotationManageAction}
             onOpenSettings={() => setSettingsOpen(true)}
@@ -774,6 +1300,9 @@ export function DicomViewerApp() {
                   className={`viewport-slot${selectedViewportId === viewportId ? " is-selected" : ""}${maximizedViewportId === viewportId ? " is-maximized" : ""}`}
                   data-testid={`viewport-slot-${viewportId}`}
                   data-viewport-id={viewportId}
+                  data-viewport-mode={
+                    viewportModeById[viewportId] ?? DEFAULT_VIEWPORT_MODE
+                  }
                   data-viewport-maximized={String(maximizedViewportId === viewportId)}
                   data-series-title={seriesEntry?.series.title ?? ""}
                   style={{
@@ -781,30 +1310,89 @@ export function DicomViewerApp() {
                     gridRow: `${cell.row} / span ${cell.rowSpan ?? 1}`,
                   }}
                 >
-                  <StackViewport
-                    viewportKey={viewportId}
-                    study={seriesEntry?.study ?? null}
-                    series={seriesEntry?.series ?? null}
-                    activeTool={activeViewportTool}
-                    imageLayoutId={
-                      viewportImageLayoutIdById[viewportId] ??
-                      DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID
-                    }
-                    invertEnabled={viewportInvertEnabled[viewportId] ?? false}
-                    overlaySettings={viewerSettings.viewportOverlay}
-                    annotationCommand={annotationCommand}
-                    isSelected={selectedViewportId === viewportId}
-                    cellSelection={viewportCellSelectionById[viewportId] ?? "all"}
-                    onSelect={handleViewportSelect}
-                    onCellSelect={handleViewportCellSelect}
-                    onToggleMaximize={handleViewportToggleMaximize}
-                    onAnnotationsChange={(state) => {
-                      setViewportAnnotationsStateById((previous) => ({
-                        ...previous,
-                        [viewportId]: state,
-                      }));
-                    }}
-                  />
+                  {(
+                    viewportModeById[viewportId] ?? DEFAULT_VIEWPORT_MODE
+                  ) === "mpr" ? (
+                    <MprViewport
+                      viewportKey={viewportId}
+                      seriesKey={viewportSeriesAssignments[viewportId] ?? null}
+                      study={seriesEntry?.study ?? null}
+                      series={seriesEntry?.series ?? null}
+                      activeTool={activeViewportTool}
+                      mprLayoutId={
+                        viewportMprLayoutIdById[viewportId] ??
+                        DEFAULT_VIEWPORT_MPR_LAYOUT_ID
+                      }
+                      invertEnabled={viewportInvertEnabled[viewportId] ?? false}
+                      overlaySettings={viewerSettings.viewportOverlay}
+                      annotationCommand={annotationCommand}
+                      dicomTagDialogOpen={dicomTagDialogViewportId === viewportId}
+                      isSelected={selectedViewportId === viewportId}
+                      onCloseDicomTagDialog={() => setDicomTagDialogViewportId(null)}
+                      onSelect={handleViewportSelect}
+                      onToggleMaximize={handleViewportToggleMaximize}
+                      onAnnotationsChange={(state) => {
+                        setViewportAnnotationsStateById((previous) => ({
+                          ...previous,
+                          [viewportId]: state,
+                        }));
+                      }}
+                    />
+                  ) : (
+                    <StackViewport
+                      viewportKey={viewportId}
+                      seriesKey={viewportSeriesAssignments[viewportId] ?? null}
+                      study={seriesEntry?.study ?? null}
+                      series={seriesEntry?.series ?? null}
+                      activeTool={activeViewportTool}
+                      imageLayoutId={
+                        viewportImageLayoutIdById[viewportId] ??
+                        DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID
+                      }
+                      invertEnabled={viewportInvertEnabled[viewportId] ?? false}
+                      overlaySettings={viewerSettings.viewportOverlay}
+                      annotationCommand={annotationCommand}
+                      sequenceSyncState={
+                        viewportSequenceSyncStateById[viewportId] ??
+                        DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE
+                      }
+                      sequenceSyncCommand={
+                        viewportSequenceSyncCommandById[viewportId] ?? null
+                      }
+                      crossStudyCalibrationCount={Object.values(
+                        crossStudyCalibrationByPairKey,
+                      ).filter(
+                        (calibration) =>
+                          calibration.leftViewportId === viewportId ||
+                          calibration.rightViewportId === viewportId,
+                      ).length}
+                      dicomTagDialogOpen={dicomTagDialogViewportId === viewportId}
+                      isSelected={selectedViewportId === viewportId}
+                      cellSelection={viewportCellSelectionById[viewportId] ?? "all"}
+                      onCloseDicomTagDialog={() => setDicomTagDialogViewportId(null)}
+                      onSelect={handleViewportSelect}
+                      onCellSelect={handleViewportCellSelect}
+                      onToggleMaximize={handleViewportToggleMaximize}
+                      onAnnotationsChange={(state) => {
+                        setViewportAnnotationsStateById((previous) => ({
+                          ...previous,
+                          [viewportId]: state,
+                        }));
+                      }}
+                      onRuntimeStateChange={(state) => {
+                        setStackViewportRuntimeStateById((previous) => {
+                          if (previous[viewportId] === state) {
+                            return previous;
+                          }
+
+                          return {
+                            ...previous,
+                            [viewportId]: state,
+                          };
+                        });
+                      }}
+                    />
+                  )}
                 </div>
               );
             })}

@@ -3,12 +3,25 @@
 import type {
   Dispatch,
   MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
   SetStateAction,
 } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Spin } from "antd";
 
 import { BootstrapIcon } from "@/components/bootstrap-icon";
+import { DicomTagModal } from "@/components/dicom-tag-modal";
+import {
+  createEmptyViewportAnnotationsState,
+  type ViewportAnnotationsState,
+} from "@/components/viewport-annotations";
+import {
+  buildOverlayContextValueMap,
+  ViewportOverlayLayer,
+  VIEWPORT_IMAGE_LAYOUT_CELL_OVERLAY_TEST_IDS,
+  VIEWPORT_OVERLAY_TEST_IDS,
+  type OverlayContextValueMap,
+} from "@/components/viewport-overlay-layer";
 import { initializeCornerstone } from "@/lib/cornerstone/init";
 import { toCornerstoneImageId } from "@/lib/cornerstone/image-id";
 import {
@@ -33,20 +46,21 @@ import {
   getViewportImageLayoutDefinition,
   type ViewportImageLayoutId,
 } from "@/lib/viewports/image-layouts";
-import type {
-  DicomImageNode,
-  DicomSeriesNode,
-  DicomStudyNode,
-} from "@/types/dicom";
-import type {
-  ViewportCorner,
-  ViewportOverlaySettings,
-} from "@/types/settings";
+import {
+  encodeViewportSequenceSyncState,
+  type StackViewportNavigationSource,
+  type StackViewportRuntimeState,
+  type ViewportSequenceSyncCommand,
+  type ViewportSequenceSyncState,
+} from "@/lib/viewports/sequence-sync";
+import type { DicomImageNode, DicomSeriesNode, DicomStudyNode } from "@/types/dicom";
+import type { ViewportOverlaySettings } from "@/types/settings";
 
 type ViewportStatus = "idle" | "loading" | "ready" | "error";
 
 interface StackViewportProps {
   viewportKey: string;
+  seriesKey?: string | null;
   study: DicomStudyNode | null;
   series: DicomSeriesNode | null;
   activeTool: ViewportTool;
@@ -54,19 +68,19 @@ interface StackViewportProps {
   invertEnabled: boolean;
   overlaySettings: ViewportOverlaySettings;
   annotationCommand?: ViewportAnnotationCommand | null;
+  sequenceSyncState?: ViewportSequenceSyncState;
+  sequenceSyncCommand?: ViewportSequenceSyncCommand | null;
+  crossStudyCalibrationCount?: number;
+  dicomTagDialogOpen?: boolean;
   isSelected: boolean;
   cellSelection: "all" | number;
+  onCloseDicomTagDialog?: () => void;
   onSelect: (viewportKey: string) => void;
   onCellSelect?: (viewportKey: string, cellIndex: number) => void;
   onToggleMaximize?: (viewportKey: string) => void;
   onAnnotationsChange?: (state: ViewportAnnotationsState) => void;
+  onRuntimeStateChange?: (state: StackViewportRuntimeState | null) => void;
 }
-
-export interface ViewportAnnotationsState {
-  entries: ViewportAnnotationEntry[];
-  selectedAnnotationUIDs: string[];
-}
-
 const WHEEL_DELTA_THRESHOLD = 48;
 const WHEEL_SCROLL_INTERVAL_MS = 36;
 const WHEEL_IDLE_RESET_MS = 220;
@@ -84,22 +98,11 @@ const DEFAULT_PAN_OFFSET = "0.00,0.00,0.00";
 const DEFAULT_VOI_WINDOW_WIDTH = "na";
 const DEFAULT_VOI_WINDOW_CENTER = "na";
 const MAX_TRANSIENT_RENDER_RECOVERY_ATTEMPTS = 1;
+const SELECT_SCROLL_DRAG_THRESHOLD_PX = 4;
 
 interface CameraSnapshot {
   focalPoint: number[];
   position: number[];
-}
-
-interface OverlayContextValueMap {
-  patientName: string;
-  patientId: string;
-  studyTitle: string;
-  studyDate: string;
-  seriesTitle: string;
-  modalitySummary: string;
-  frameProgress: string;
-  imageFileName: string;
-  instanceNumber: string;
 }
 
 type ViewportAnnotationCounts = Record<ViewportTool, number>;
@@ -115,6 +118,13 @@ interface ViewportCellSize {
   height: number;
 }
 
+interface SelectScrollGestureState {
+  pointerId: number | null;
+  originX: number;
+  originY: number;
+  isPointerDown: boolean;
+}
+
 const EMPTY_ANNOTATION_COUNTS: ViewportAnnotationCounts = {
   select: 0,
   pan: 0,
@@ -127,10 +137,6 @@ const EMPTY_ANNOTATION_COUNTS: ViewportAnnotationCounts = {
   ellipseRoi: 0,
   circleRoi: 0,
 };
-
-function formatOverlayValue(value: string | undefined, fallback = "--") {
-  return value?.trim() ? value : fallback;
-}
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -237,6 +243,45 @@ function getSelectedViewportAnnotationUIDs(entries: ViewportAnnotationEntry[]) {
     .map((entry) => entry.annotationUID);
 }
 
+function areAnnotationCountsEqual(
+  left: ViewportAnnotationCounts,
+  right: ViewportAnnotationCounts,
+) {
+  return (Object.keys(left) as ViewportTool[]).every(
+    (toolId) => left[toolId] === right[toolId],
+  );
+}
+
+function areStringListsEqual(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function areAnnotationEntriesEqual(
+  left: ViewportAnnotationEntry[],
+  right: ViewportAnnotationEntry[],
+) {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => {
+      const rightEntry = right[index];
+
+      return (
+        entry.annotationUID === rightEntry?.annotationUID &&
+        entry.toolId === rightEntry.toolId &&
+        entry.toolLabel === rightEntry.toolLabel &&
+        entry.toolShortLabel === rightEntry.toolShortLabel &&
+        entry.frameIndex === rightEntry.frameIndex &&
+        entry.frameLabel === rightEntry.frameLabel &&
+        entry.description === rightEntry.description &&
+        entry.isSelected === rightEntry.isSelected
+      );
+    })
+  );
+}
+
 function syncViewportAnnotationState(
   tools: typeof import("@cornerstonejs/tools"),
   element: HTMLDivElement,
@@ -246,18 +291,52 @@ function syncViewportAnnotationState(
     | undefined,
   setAnnotationCounts: Dispatch<SetStateAction<ViewportAnnotationCounts>>,
   setSelectedAnnotationCount: Dispatch<SetStateAction<number>>,
+  lastReportedParentStateRef:
+    | { current: ViewportAnnotationsState | null }
+    | undefined,
+  notifyParent = true,
 ) {
   const imageIds =
     series?.images.map((image) => toCornerstoneImageId(image.dicomUrl)) ?? [];
   const entries = getViewportAnnotationEntries(tools, element, imageIds);
   const selectedAnnotationUIDs = getSelectedViewportAnnotationUIDs(entries);
+  const nextAnnotationCounts = buildViewportAnnotationCounts(entries);
 
-  setAnnotationCounts(buildViewportAnnotationCounts(entries));
-  setSelectedAnnotationCount(selectedAnnotationUIDs.length);
-  onAnnotationsChange?.({
+  setAnnotationCounts((previous) =>
+    areAnnotationCountsEqual(previous, nextAnnotationCounts)
+      ? previous
+      : nextAnnotationCounts,
+  );
+  setSelectedAnnotationCount((previous) =>
+    previous === selectedAnnotationUIDs.length ? previous : selectedAnnotationUIDs.length,
+  );
+
+  if (!notifyParent) {
+    return;
+  }
+
+  const nextState = {
     entries,
     selectedAnnotationUIDs,
-  });
+  };
+  const previousState = lastReportedParentStateRef?.current ?? null;
+
+  if (
+    previousState &&
+    areAnnotationEntriesEqual(previousState.entries, nextState.entries) &&
+    areStringListsEqual(
+      previousState.selectedAnnotationUIDs,
+      nextState.selectedAnnotationUIDs,
+    )
+  ) {
+    return;
+  }
+
+  if (lastReportedParentStateRef) {
+    lastReportedParentStateRef.current = nextState;
+  }
+
+  onAnnotationsChange?.(nextState);
 }
 
 function disableStackContextPrefetchSafely(
@@ -296,30 +375,6 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-const VIEWPORT_OVERLAY_CLASS_NAMES: Record<ViewportCorner, string> = {
-  topLeft: "viewport-corner-top-left",
-  topRight: "viewport-corner-top-right",
-  bottomLeft: "viewport-corner-bottom-left",
-  bottomRight: "viewport-corner-bottom-right",
-};
-
-const VIEWPORT_OVERLAY_TEST_IDS: Record<ViewportCorner, string> = {
-  topLeft: "viewport-overlay-top-left",
-  topRight: "viewport-overlay-top-right",
-  bottomLeft: "viewport-overlay-bottom-left",
-  bottomRight: "viewport-frame-indicator",
-};
-
-const VIEWPORT_IMAGE_LAYOUT_CELL_OVERLAY_TEST_IDS: Record<
-  ViewportCorner,
-  string
-> = {
-  topLeft: "viewport-image-layout-cell-overlay-top-left",
-  topRight: "viewport-image-layout-cell-overlay-top-right",
-  bottomLeft: "viewport-image-layout-cell-overlay-bottom-left",
-  bottomRight: "viewport-image-layout-cell-frame-indicator",
-};
-
 function getCanvasSourceDimensions(
   image:
     | {
@@ -350,70 +405,33 @@ function getCanvasSourceDimensions(
   };
 }
 
-function buildOverlayContextValueMap(
-  study: DicomStudyNode | null,
-  series: DicomSeriesNode | null,
-  image: DicomImageNode | null | undefined,
-  frameProgress: string,
-): OverlayContextValueMap {
-  const modalitySummary = [
-    series?.modality,
-    series?.seriesNumber ? `S${series.seriesNumber}` : undefined,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  return {
-    patientName: formatOverlayValue(study?.patientName, "未标注患者"),
-    patientId: formatOverlayValue(study?.patientId),
-    studyTitle: formatOverlayValue(study?.title, "未选中检查"),
-    studyDate: formatOverlayValue(study?.studyDate),
-    seriesTitle: formatOverlayValue(series?.title, "未选中序列"),
-    modalitySummary: formatOverlayValue(modalitySummary, "未标注模态"),
-    frameProgress,
-    imageFileName: formatOverlayValue(image?.fileName),
-    instanceNumber: formatOverlayValue(image?.instanceNumber?.toString()),
-  };
-}
-
-function getOverlayValue(
-  tagKey: keyof OverlayContextValueMap | "interactionHint",
-  overlayValueMap: OverlayContextValueMap,
-) {
-  if (tagKey === "interactionHint") {
-    return "";
-  }
-
-  return overlayValueMap[tagKey];
-}
-
 function getViewportImageLayoutCellIndex(
   event: ReactMouseEvent<HTMLDivElement>,
+  targetRect: DOMRect,
   rows: number,
   columns: number,
 ) {
-  const stageRect = event.currentTarget.getBoundingClientRect();
-  const relativeX = event.clientX - stageRect.left;
-  const relativeY = event.clientY - stageRect.top;
+  const relativeX = event.clientX - targetRect.left;
+  const relativeY = event.clientY - targetRect.top;
 
   if (
-    stageRect.width <= 0 ||
-    stageRect.height <= 0 ||
+    targetRect.width <= 0 ||
+    targetRect.height <= 0 ||
     relativeX < 0 ||
     relativeY < 0 ||
-    relativeX > stageRect.width ||
-    relativeY > stageRect.height
+    relativeX > targetRect.width ||
+    relativeY > targetRect.height
   ) {
     return null;
   }
 
   const columnIndex = clampNumber(
-    Math.floor((relativeX / stageRect.width) * columns),
+    Math.floor((relativeX / targetRect.width) * columns),
     0,
     columns - 1,
   );
   const rowIndex = clampNumber(
-    Math.floor((relativeY / stageRect.height) * rows),
+    Math.floor((relativeY / targetRect.height) * rows),
     0,
     rows - 1,
   );
@@ -421,58 +439,36 @@ function getViewportImageLayoutCellIndex(
   return rowIndex * columns + columnIndex;
 }
 
-interface ViewportOverlayLayerProps {
-  overlaySettings: ViewportOverlaySettings;
-  overlayValueMap: OverlayContextValueMap;
-  testIds: Record<ViewportCorner, string>;
+function getCanvasDisplayStyle(
+  sourceDimensions: CanvasSourceDimensions,
+  cellSize: ViewportCellSize,
+) {
+  const sourceAspectRatio = sourceDimensions.width / sourceDimensions.height;
+  const cellAspectRatio =
+    cellSize.width > 0 && cellSize.height > 0
+      ? cellSize.width / cellSize.height
+      : sourceAspectRatio;
+
+  return cellAspectRatio >= sourceAspectRatio
+    ? {
+        width: `${(sourceAspectRatio / cellAspectRatio) * 100}%`,
+        height: "100%",
+      }
+    : {
+        width: "100%",
+        height: `${(cellAspectRatio / sourceAspectRatio) * 100}%`,
+      };
 }
 
-function ViewportOverlayLayer({
-  overlaySettings,
-  overlayValueMap,
-  testIds,
-}: ViewportOverlayLayerProps) {
-  return (Object.keys(VIEWPORT_OVERLAY_CLASS_NAMES) as ViewportCorner[]).map(
-    (corner) => {
-      const items = overlaySettings.corners[corner];
-
-      if (!items.length) {
-        return null;
-      }
-
-      return (
-        <div
-          key={corner}
-          className={`viewport-corner ${VIEWPORT_OVERLAY_CLASS_NAMES[corner]}`}
-          data-testid={testIds[corner]}
-        >
-          {items.map((item) => {
-            const value = getOverlayValue(item.tagKey, overlayValueMap);
-
-            if (!value) {
-              return null;
-            }
-
-            return (
-              <div
-                key={item.id}
-                className="viewport-corner-line"
-                style={{
-                  color: item.style.color,
-                  fontSize: `${item.style.fontSize}px`,
-                  fontWeight: item.style.fontWeight,
-                  fontStyle: item.style.italic ? "italic" : "normal",
-                }}
-              >
-                {item.prefix}
-                {value}
-              </div>
-            );
-          })}
-        </div>
-      );
-    },
-  );
+function applyCanvasDisplayStyle(
+  canvas: HTMLCanvasElement,
+  canvasDisplayStyle: {
+    width: string;
+    height: string;
+  },
+) {
+  canvas.style.width = canvasDisplayStyle.width;
+  canvas.style.height = canvasDisplayStyle.height;
 }
 
 interface ViewportImageLayoutCanvasProps {
@@ -498,6 +494,10 @@ function ViewportImageLayoutCanvas({
 }: ViewportImageLayoutCanvasProps) {
   const cellRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cellSizeRef = useRef<ViewportCellSize>({
+    width: 0,
+    height: 0,
+  });
   const [hasError, setHasError] = useState(false);
   const [sourceDimensions, setSourceDimensions] = useState<CanvasSourceDimensions>(
     {
@@ -509,7 +509,10 @@ function ViewportImageLayoutCanvas({
     width: 0,
     height: 0,
   });
-  const [renderVersion, setRenderVersion] = useState(0);
+
+  useEffect(() => {
+    cellSizeRef.current = cellSize;
+  }, [cellSize]);
 
   useEffect(() => {
     const cellElement = cellRef.current;
@@ -584,13 +587,16 @@ function ViewportImageLayoutCanvas({
           canvas: canvasRef.current,
           imageId,
           renderingEngineId: `viewport-image-layout-${viewportKey}-${cellIndex}`,
-          thumbnail: true,
+          thumbnail: false,
         });
 
         if (!cancelled) {
+          applyCanvasDisplayStyle(
+            canvasRef.current,
+            getCanvasDisplayStyle(nextSourceDimensions, cellSizeRef.current),
+          );
           setSourceDimensions(nextSourceDimensions);
           setHasError(false);
-          setRenderVersion((previous) => previous + 1);
         }
       } catch (error) {
         console.error("Failed to render viewport image layout cell", error);
@@ -609,32 +615,22 @@ function ViewportImageLayoutCanvas({
   }, [cellIndex, image, viewportKey]);
 
   const statusLabel = hasError ? "ERR" : null;
-  const sourceAspectRatio = sourceDimensions.width / sourceDimensions.height;
-  const cellAspectRatio =
-    cellSize.width > 0 && cellSize.height > 0
-      ? cellSize.width / cellSize.height
-      : sourceAspectRatio;
-  const canvasDisplayStyle =
-    cellAspectRatio >= sourceAspectRatio
-      ? {
-          width: `${(sourceAspectRatio / cellAspectRatio) * 100}%`,
-          height: "100%",
-        }
-      : {
-          width: "100%",
-          height: `${(cellAspectRatio / sourceAspectRatio) * 100}%`,
-        };
+  const canvasDisplayStyle = getCanvasDisplayStyle(sourceDimensions, cellSize);
+  const canvasDisplayWidth = canvasDisplayStyle.width;
+  const canvasDisplayHeight = canvasDisplayStyle.height;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
 
     if (!canvas) {
       return;
     }
 
-    canvas.style.width = canvasDisplayStyle.width;
-    canvas.style.height = canvasDisplayStyle.height;
-  }, [canvasDisplayStyle.height, canvasDisplayStyle.width, renderVersion]);
+    applyCanvasDisplayStyle(canvas, {
+      width: canvasDisplayWidth,
+      height: canvasDisplayHeight,
+    });
+  }, [canvasDisplayHeight, canvasDisplayWidth]);
 
   return (
     <div
@@ -673,6 +669,7 @@ function ViewportImageLayoutCanvas({
 
 export function StackViewport({
   viewportKey,
+  seriesKey = null,
   study,
   series,
   activeTool,
@@ -680,17 +677,28 @@ export function StackViewport({
   invertEnabled,
   overlaySettings,
   annotationCommand = null,
+  sequenceSyncState,
+  sequenceSyncCommand = null,
+  crossStudyCalibrationCount = 0,
+  dicomTagDialogOpen = false,
   isSelected,
   cellSelection,
+  onCloseDicomTagDialog,
   onSelect,
   onCellSelect,
   onToggleMaximize,
   onAnnotationsChange,
+  onRuntimeStateChange,
 }: StackViewportProps) {
+  const imageLayoutGridRef = useRef<HTMLDivElement | null>(null);
   const elementRef = useRef<HTMLDivElement | null>(null);
   const activeToolRef = useRef<ViewportTool>(activeTool);
   const invertEnabledRef = useRef(invertEnabled);
+  const seriesRef = useRef(series);
   const onAnnotationsChangeRef = useRef(onAnnotationsChange);
+  const onRuntimeStateChangeRef = useRef(onRuntimeStateChange);
+  const lastReportedParentAnnotationStateRef =
+    useRef<ViewportAnnotationsState | null>(createEmptyViewportAnnotationsState());
   const coreRef = useRef<typeof import("@cornerstonejs/core") | null>(null);
   const viewportRef =
     useRef<import("@cornerstonejs/core").Types.IStackViewport | null>(null);
@@ -700,6 +708,10 @@ export function StackViewport({
   const toolGroupIdRef = useRef<string | null>(null);
   const initialCameraRef = useRef<CameraSnapshot | null>(null);
   const lastHandledAnnotationCommandIdRef = useRef<number | null>(null);
+  const lastHandledSequenceSyncCommandIdRef = useRef<number | null>(null);
+  const pendingNavigationSourceRef =
+    useRef<StackViewportNavigationSource | null>(null);
+  const runtimeChangeTokenRef = useRef(0);
   const transientRecoveryAttemptsRef = useRef(0);
   const [status, setStatus] = useState<ViewportStatus>("idle");
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -717,11 +729,67 @@ export function StackViewport({
   const wheelDeltaRef = useRef(0);
   const lastWheelAtRef = useRef(0);
   const lastScrollAtRef = useRef(0);
+  const selectScrollGestureRef = useRef<SelectScrollGestureState>({
+    pointerId: null,
+    originX: 0,
+    originY: 0,
+    isPointerDown: false,
+  });
   const containerReady = viewportSize.width > 0 && viewportSize.height > 0;
+  const [isSelectScrollActive, setIsSelectScrollActive] = useState(false);
+  const resetSelectScrollGesture = useCallback(() => {
+    selectScrollGestureRef.current = {
+      pointerId: null,
+      originX: 0,
+      originY: 0,
+      isPointerDown: false,
+    };
+    setIsSelectScrollActive(false);
+  }, []);
+
+  useEffect(() => {
+    seriesRef.current = series;
+  }, [series]);
 
   useEffect(() => {
     onAnnotationsChangeRef.current = onAnnotationsChange;
   }, [onAnnotationsChange]);
+
+  useEffect(() => {
+    onRuntimeStateChangeRef.current = onRuntimeStateChange;
+  }, [onRuntimeStateChange]);
+
+  useEffect(() => {
+    const handleWindowPointerEnd = () => {
+      resetSelectScrollGesture();
+    };
+
+    window.addEventListener("pointerup", handleWindowPointerEnd, true);
+    window.addEventListener("pointercancel", handleWindowPointerEnd, true);
+    window.addEventListener("blur", handleWindowPointerEnd);
+
+    return () => {
+      window.removeEventListener("pointerup", handleWindowPointerEnd, true);
+      window.removeEventListener("pointercancel", handleWindowPointerEnd, true);
+      window.removeEventListener("blur", handleWindowPointerEnd);
+    };
+  }, [resetSelectScrollGesture]);
+
+  useEffect(() => {
+    if (activeTool === "select") {
+      return;
+    }
+
+    resetSelectScrollGesture();
+  }, [activeTool, resetSelectScrollGesture]);
+
+  useEffect(() => {
+    if (status === "ready") {
+      return;
+    }
+
+    resetSelectScrollGesture();
+  }, [resetSelectScrollGesture, status]);
 
   const renderingEngineId = getSharedCornerstoneRenderingEngineId();
   const viewportId = `dicom-viewport-${viewportKey}`;
@@ -810,6 +878,24 @@ export function StackViewport({
 
     return cellSelection === cell.cellIndex ? "single" : "none";
   });
+  const dicomTagSources = imageLayoutCells
+    .filter((cell) =>
+      cellSelection === "all" ? Boolean(cell.image) : cell.cellIndex === cellSelection,
+    )
+    .filter((cell): cell is (typeof imageLayoutCells)[number] & { image: DicomImageNode } =>
+      Boolean(cell.image),
+    )
+    .map((cell) => ({
+      id: `cell-${cell.cellIndex}`,
+      label: hasMontageImageLayout
+        ? `Cell ${cell.cellIndex + 1} · [${cell.frameIndex ?? 0}]/[${totalImages}]`
+        : `当前图像 · [${cell.frameIndex ?? currentImageIndex}]/[${totalImages}]`,
+      image: cell.image,
+    }));
+  const defaultDicomTagSourceId =
+    cellSelection === "all"
+      ? (dicomTagSources[0]?.id ?? null)
+      : `cell-${cellSelection}`;
 
   const handleViewportPointerDownCapture = () => {
     if (isSelected) {
@@ -819,13 +905,77 @@ export function StackViewport({
     onSelect(viewportKey);
   };
 
+  const handleViewportPointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0 || activeTool !== "select") {
+      resetSelectScrollGesture();
+      return;
+    }
+
+    selectScrollGestureRef.current = {
+      pointerId: event.pointerId,
+      originX: event.clientX,
+      originY: event.clientY,
+      isPointerDown: true,
+    };
+    setIsSelectScrollActive(false);
+  };
+
+  const handleViewportPointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const gestureState = selectScrollGestureRef.current;
+
+    if (
+      activeTool !== "select" ||
+      !gestureState.isPointerDown ||
+      gestureState.pointerId !== event.pointerId
+    ) {
+      return;
+    }
+
+    if ((event.buttons & 1) !== 1) {
+      resetSelectScrollGesture();
+      return;
+    }
+
+    if (isSelectScrollActive) {
+      return;
+    }
+
+    const offsetX = event.clientX - gestureState.originX;
+    const offsetY = event.clientY - gestureState.originY;
+
+    if (Math.hypot(offsetX, offsetY) < SELECT_SCROLL_DRAG_THRESHOLD_PX) {
+      return;
+    }
+
+    setIsSelectScrollActive(true);
+  };
+
+  const handleViewportPointerUp = () => {
+    resetSelectScrollGesture();
+  };
+
+  const handleViewportPointerCancel = () => {
+    resetSelectScrollGesture();
+  };
+
   const handleViewportClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!hasMontageImageLayout || !isSelected || activeTool !== "select") {
       return;
     }
 
+    const imageLayoutGridElement = imageLayoutGridRef.current;
+
+    if (!imageLayoutGridElement) {
+      return;
+    }
+
     const cellIndex = getViewportImageLayoutCellIndex(
       event,
+      imageLayoutGridElement.getBoundingClientRect(),
       imageLayoutDefinition.rows,
       imageLayoutDefinition.columns,
     );
@@ -840,6 +990,35 @@ export function StackViewport({
 
     onCellSelect?.(viewportKey, cellIndex);
   };
+
+  const emitRuntimeState = useCallback(
+    (
+      status: StackViewportRuntimeState["status"],
+      frameIndex: number,
+      changeSource: StackViewportNavigationSource,
+    ) => {
+      if (!onRuntimeStateChangeRef.current) {
+        return;
+      }
+
+      const currentSeries = seriesRef.current;
+
+      if (!currentSeries || status !== "ready" || frameIndex < 1) {
+        onRuntimeStateChangeRef.current(null);
+        return;
+      }
+
+      runtimeChangeTokenRef.current += 1;
+      onRuntimeStateChangeRef.current({
+        status,
+        currentFrameIndex: frameIndex,
+        frameCount: currentSeries.images.length,
+        lastChangeSource: changeSource,
+        lastChangeToken: runtimeChangeTokenRef.current,
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const element = elementRef.current;
@@ -923,7 +1102,12 @@ export function StackViewport({
 
     const handleStackNewImage = (event: Event) => {
       const customEvent = event as CustomEvent<{ imageIdIndex: number }>;
-      setCurrentImageIndex(customEvent.detail.imageIdIndex + 1);
+      const nextFrameIndex = customEvent.detail.imageIdIndex + 1;
+      const changeSource = pendingNavigationSourceRef.current ?? "user";
+
+      pendingNavigationSourceRef.current = null;
+      setCurrentImageIndex(nextFrameIndex);
+      emitRuntimeState("ready", nextFrameIndex, changeSource);
     };
     const handleCameraModified = () => {
       if (!viewportRef.current) {
@@ -1129,10 +1313,13 @@ export function StackViewport({
         entries: [],
         selectedAnnotationUIDs: [],
       });
+      lastReportedParentAnnotationStateRef.current =
+        createEmptyViewportAnnotationsState();
       setViewportRuntimeReady(false);
     };
   }, [
     containerReady,
+    emitRuntimeState,
     renderingEngineId,
     toolGroupId,
     viewportId,
@@ -1173,7 +1360,10 @@ export function StackViewport({
       return;
     }
 
-    const refreshAnnotations = () => {
+    let frameId = 0;
+    let pendingNotifyParent = false;
+
+    const refreshAnnotations = (notifyParent: boolean) => {
       syncViewportAnnotationState(
         tools,
         element,
@@ -1181,10 +1371,45 @@ export function StackViewport({
         onAnnotationsChangeRef.current,
         setAnnotationCounts,
         setSelectedAnnotationCount,
+        lastReportedParentAnnotationStateRef,
+        notifyParent,
       );
     };
 
-    refreshAnnotations();
+    const flushAnnotationRefresh = () => {
+      frameId = 0;
+      const notifyParent = pendingNotifyParent;
+
+      pendingNotifyParent = false;
+      refreshAnnotations(notifyParent);
+    };
+
+    const scheduleAnnotationRefresh = (notifyParent: boolean) => {
+      pendingNotifyParent = pendingNotifyParent || notifyParent;
+
+      if (frameId) {
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(flushAnnotationRefresh);
+    };
+
+    const handleAnnotationEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        viewportId?: string;
+      }>;
+      const eventViewportId = customEvent.detail?.viewportId;
+
+      if (eventViewportId && eventViewportId !== viewportIdRef.current) {
+        return;
+      }
+
+      scheduleAnnotationRefresh(
+        customEvent.type !== tools.Enums.Events.ANNOTATION_MODIFIED,
+      );
+    };
+
+    scheduleAnnotationRefresh(true);
 
     const annotationEvents = [
       tools.Enums.Events.ANNOTATION_ADDED,
@@ -1195,12 +1420,16 @@ export function StackViewport({
     ];
 
     for (const eventName of annotationEvents) {
-      core.eventTarget.addEventListener(eventName, refreshAnnotations);
+      core.eventTarget.addEventListener(eventName, handleAnnotationEvent);
     }
 
     return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+
       for (const eventName of annotationEvents) {
-        core.eventTarget.removeEventListener(eventName, refreshAnnotations);
+        core.eventTarget.removeEventListener(eventName, handleAnnotationEvent);
       }
     };
   }, [series, viewportRuntimeReady, viewportRuntimeSeed]);
@@ -1307,8 +1536,12 @@ export function StackViewport({
           entries: [],
           selectedAnnotationUIDs: [],
         });
+        lastReportedParentAnnotationStateRef.current =
+          createEmptyViewportAnnotationsState();
         initialCameraRef.current = null;
+        pendingNavigationSourceRef.current = null;
         transientRecoveryAttemptsRef.current = 0;
+        onRuntimeStateChangeRef.current?.(null);
         return;
       }
 
@@ -1319,6 +1552,7 @@ export function StackViewport({
       wheelDeltaRef.current = 0;
       lastWheelAtRef.current = 0;
       lastScrollAtRef.current = 0;
+      onRuntimeStateChangeRef.current?.(null);
 
       try {
         const imageIds = series.images.map((image) =>
@@ -1326,6 +1560,7 @@ export function StackViewport({
         );
 
         disableStackContextPrefetchSafely(currentTools, currentElement);
+        pendingNavigationSourceRef.current = "load";
         await currentViewport.setStack(imageIds);
 
         if (cancelled) {
@@ -1351,12 +1586,19 @@ export function StackViewport({
           onAnnotationsChangeRef.current,
           setAnnotationCounts,
           setSelectedAnnotationCount,
+          lastReportedParentAnnotationStateRef,
         );
         initialCameraRef.current = getCameraSnapshot(currentViewport);
         transientRecoveryAttemptsRef.current = 0;
 
         if (!cancelled) {
-          setCurrentImageIndex(currentViewport.getCurrentImageIdIndex() + 1);
+          const nextFrameIndex = currentViewport.getCurrentImageIdIndex() + 1;
+
+          setCurrentImageIndex(nextFrameIndex);
+          if (pendingNavigationSourceRef.current === "load") {
+            pendingNavigationSourceRef.current = null;
+            emitRuntimeState("ready", nextFrameIndex, "load");
+          }
           setStatus("ready");
         }
       } catch (error) {
@@ -1379,6 +1621,7 @@ export function StackViewport({
         }
 
         setStatus("error");
+        onRuntimeStateChangeRef.current?.(null);
       }
     }
 
@@ -1390,11 +1633,67 @@ export function StackViewport({
     };
   }, [
     containerReady,
+    emitRuntimeState,
     series,
     viewportKey,
     viewportRuntimeReady,
     viewportRuntimeSeed,
   ]);
+
+  useEffect(() => {
+    if (!series || !series.images.length) {
+      onRuntimeStateChangeRef.current?.(null);
+      return;
+    }
+
+    if (!sequenceSyncCommand) {
+      return;
+    }
+
+    if (sequenceSyncCommand.targetViewportKey !== viewportKey) {
+      return;
+    }
+
+    if (lastHandledSequenceSyncCommandIdRef.current === sequenceSyncCommand.id) {
+      return;
+    }
+
+    const viewport = viewportRef.current;
+
+    if (!viewportRuntimeReady || !viewport) {
+      return;
+    }
+
+    const nextFrameIndex = clampNumber(
+      sequenceSyncCommand.frameIndex,
+      1,
+      series.images.length,
+    );
+
+    lastHandledSequenceSyncCommandIdRef.current = sequenceSyncCommand.id;
+
+    if (nextFrameIndex === currentImageIndex) {
+      return;
+    }
+
+    pendingNavigationSourceRef.current = "sync";
+    void viewport.setImageIdIndex(nextFrameIndex - 1).catch((error) => {
+      pendingNavigationSourceRef.current = null;
+      console.error("Failed to apply sequence sync command", error);
+    });
+  }, [
+    currentImageIndex,
+    sequenceSyncCommand,
+    series,
+    viewportKey,
+    viewportRuntimeReady,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      onRuntimeStateChangeRef.current?.(null);
+    };
+  }, []);
 
   return (
     <div
@@ -1410,9 +1709,14 @@ export function StackViewport({
       data-image-layout-count={imageLayoutDefinition.cellCount}
       data-image-layout-start-frame={imageLayoutStartFrameIndex}
       data-image-layout-end-frame={imageLayoutEndFrameIndex}
+      data-view-mode="stack"
       data-viewport-id={viewportKey}
+      data-series-key={seriesKey ?? ""}
       data-viewport-selected={String(isSelected)}
       data-cell-selection={String(cellSelection)}
+      data-select-scroll-active={String(isSelectScrollActive)}
+      data-sequence-sync-state={encodeViewportSequenceSyncState(sequenceSyncState)}
+      data-cross-study-calibration-count={crossStudyCalibrationCount}
       data-voi-window-width={voiWindowWidth}
       data-voi-window-center={voiWindowCenter}
       data-active-annotation-count={annotationCounts[activeTool]}
@@ -1420,6 +1724,10 @@ export function StackViewport({
       data-selected-annotation-count={selectedAnnotationCount}
       data-viewport-size={`${viewportSize.width}x${viewportSize.height}`}
       onPointerDownCapture={handleViewportPointerDownCapture}
+      onPointerDown={handleViewportPointerDown}
+      onPointerMove={handleViewportPointerMove}
+      onPointerUp={handleViewportPointerUp}
+      onPointerCancel={handleViewportPointerCancel}
       onClick={handleViewportClick}
       onDoubleClick={() => {
         if (!onToggleMaximize || isViewportAnnotationTool(activeTool)) {
@@ -1431,6 +1739,7 @@ export function StackViewport({
     >
       {hasMontageImageLayout ? (
         <div
+          ref={imageLayoutGridRef}
           className="viewport-image-layout-grid"
           data-testid="viewport-image-layout-grid"
           data-image-layout-id={imageLayoutId}
@@ -1523,6 +1832,13 @@ export function StackViewport({
           </div>
         </div>
       ) : null}
+      <DicomTagModal
+        open={dicomTagDialogOpen}
+        title="DICOM Tag"
+        sources={dicomTagSources}
+        defaultSourceId={defaultDicomTagSourceId}
+        onClose={onCloseDicomTagDialog ?? (() => undefined)}
+      />
     </div>
   );
 }

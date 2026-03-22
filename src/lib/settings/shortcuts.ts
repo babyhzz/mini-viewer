@@ -143,6 +143,13 @@ export const TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS: ToolbarShortcutCommandDefinit
       defaultBinding: createToolbarShortcutBinding("KeyI"),
     },
     {
+      id: "dicomTag",
+      categoryId: "actions",
+      label: "Dicom Tag",
+      description: "打开当前图像的 DICOM Tag 面板",
+      defaultBinding: createToolbarShortcutBinding("F2"),
+    },
+    {
       id: "annotationList",
       categoryId: "actions",
       label: "图元列表",
@@ -189,9 +196,9 @@ export function isToolbarShortcutToolCommand(
   commandId: ToolbarShortcutCommandId,
 ): commandId is Exclude<
   ToolbarShortcutCommandId,
-  "invert" | "annotationList" | "settings"
+  "invert" | "dicomTag" | "annotationList" | "settings"
 > {
-  return !["invert", "annotationList", "settings"].includes(commandId);
+  return !["invert", "dicomTag", "annotationList", "settings"].includes(commandId);
 }
 
 export function getToolbarShortcutCommandDefinition(

@@ -15,6 +15,61 @@ async function waitForViewerReady(page: import("@playwright/test").Page) {
   );
 }
 
+async function toggleSequenceSync(
+  page: import("@playwright/test").Page,
+  syncType: "sameStudy" | "crossStudy",
+) {
+  const sequenceSyncButton = page.getByTestId("viewport-sequence-sync-button");
+
+  if (await sequenceSyncButton.count()) {
+    await sequenceSyncButton.click();
+    await page.getByTestId(`viewport-sequence-sync-option-${syncType}`).click();
+    return;
+  }
+
+  await page.getByTestId("viewport-tool-overflow").click();
+  await page
+    .getByTestId(
+      `viewport-tool-overflow-option-sequenceSync-toggle${
+        syncType === "sameStudy" ? "SameStudy" : "CrossStudy"
+      }`,
+    )
+    .click();
+}
+
+async function clearSequenceSync(page: import("@playwright/test").Page) {
+  const sequenceSyncButton = page.getByTestId("viewport-sequence-sync-button");
+
+  if (await sequenceSyncButton.count()) {
+    await sequenceSyncButton.click();
+    await page.getByTestId("viewport-sequence-sync-option-clear").click();
+    return;
+  }
+
+  await page.getByTestId("viewport-tool-overflow").click();
+  await page
+    .getByTestId("viewport-tool-overflow-option-sequenceSync-clear")
+    .click();
+}
+
+async function scrollViewportFrames(
+  page: import("@playwright/test").Page,
+  viewportStage: import("@playwright/test").Locator,
+  deltaY: number,
+  times: number,
+) {
+  await viewportStage.click({
+    position: {
+      x: 36,
+      y: 36,
+    },
+  });
+
+  for (let index = 0; index < times; index += 1) {
+    await page.mouse.wheel(0, deltaY);
+  }
+}
+
 test.describe("DICOM viewer smoke coverage", () => {
   test("hierarchy api exposes the local study tree", async ({ request }) => {
     const response = await request.get("/api/hierarchy");
@@ -101,13 +156,61 @@ test.describe("DICOM viewer smoke coverage", () => {
     expect(payload.viewportOverlay.corners.bottomRight.length).toBeGreaterThan(0);
     expect(payload.toolbarShortcuts.schemaVersion).toBe(1);
     expect(payload.toolbarShortcuts.bindings).toHaveProperty("select");
+    expect(payload.toolbarShortcuts.bindings.dicomTag?.code).toBe("F2");
     expect(payload.toolbarShortcuts.bindings).toHaveProperty("settings");
+  });
+
+  test("dicom tags api returns the parsed tag tree for a real image", async ({
+    request,
+  }) => {
+    const hierarchyResponse = await request.get("/api/hierarchy");
+    const hierarchyPayload = (await hierarchyResponse.json()) as {
+      studies: Array<{
+        series: Array<{
+          images: Array<{
+            filePath: string;
+          }>;
+        }>;
+      }>;
+    };
+    const firstImagePath =
+      hierarchyPayload.studies[0]?.series[0]?.images[0]?.filePath ?? null;
+
+    expect(firstImagePath).toBeTruthy();
+
+    const response = await request.get(
+      `/api/dicom-tags?path=${encodeURIComponent(firstImagePath!)}`,
+    );
+
+    expect(response.ok()).toBeTruthy();
+
+    const payload = (await response.json()) as {
+      filePath: string;
+      fileName: string;
+      tagCount: number;
+      tags: Array<{
+        displayTag: string;
+        name: string;
+        vr: string;
+        children: unknown[];
+      }>;
+    };
+
+    expect(payload.filePath).toBe(firstImagePath);
+    expect(payload.fileName).toBeTruthy();
+    expect(payload.tagCount).toBeGreaterThan(0);
+    expect(payload.tags.length).toBeGreaterThan(0);
+    expect(payload.tags[0].displayTag).toMatch(/^\([0-9A-F]{4},[0-9A-F]{4}\)$/);
+    expect(payload.tags[0].name).toBeTruthy();
+    expect(payload.tags[0].vr).toBeTruthy();
+    expect(Array.isArray(payload.tags[0].children)).toBeTruthy();
   });
 
   test("home page loads navigator and renders an active viewport", async ({
     page,
   }) => {
     await waitForViewerReady(page);
+    const viewportGrid = page.getByTestId("viewport-grid");
     const seriesCards = page.getByTestId("series-card");
     const viewportStage = page.getByTestId("viewport-stage");
     const frameIndicator = page.getByTestId("viewport-frame-indicator");
@@ -115,6 +218,8 @@ test.describe("DICOM viewer smoke coverage", () => {
       (await seriesCards.first().getAttribute("data-image-count")) ?? "0",
     );
 
+    await expect(viewportGrid).toHaveAttribute("data-layout-id", "1x1");
+    await expect(viewportGrid).toHaveAttribute("data-layout-count", "1");
     await expect(page.getByTestId("thumbnail-canvas").first()).toBeVisible();
     await expect(page.getByTestId("viewport-toolbar")).toBeVisible();
     await expect(page.getByTestId("viewport-tool-select")).toHaveAttribute(
@@ -122,6 +227,14 @@ test.describe("DICOM viewer smoke coverage", () => {
       "true",
     );
     await expect(page.getByTestId("viewport-image-layout-button")).toBeVisible();
+    await expect(page.getByTestId("viewport-mpr-layout-button")).toBeVisible();
+    const sequenceSyncButton = page.getByTestId("viewport-sequence-sync-button");
+
+    if (await sequenceSyncButton.count()) {
+      await expect(sequenceSyncButton).toBeVisible();
+    } else {
+      await expect(page.getByTestId("viewport-tool-overflow")).toBeVisible();
+    }
     await expect(
       page.getByTestId("viewport-tool-group-measure"),
     ).toBeVisible();
@@ -153,6 +266,7 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(viewportStage).toHaveAttribute("data-active-tool", "select");
     await expect(viewportStage).toHaveAttribute("data-invert-enabled", "false");
     await expect(viewportStage).toHaveAttribute("data-viewport-selected", "true");
+    await expect(viewportStage).toHaveAttribute("data-sequence-sync-state", "off");
     await expect(page.getByTestId("viewport-scrollbar")).toHaveAttribute(
       "data-single-frame",
       String(firstImageCount === 1),
@@ -308,6 +422,118 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(viewportStage).toHaveAttribute("data-active-tool", "pan");
   });
 
+  test("dicom tag modal opens from shortcut and supports tag number/name search", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.route("**/api/dicom-tags?*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          filePath: "mock-study/mock-series/image-1.dcm",
+          fileName: "image-1.dcm",
+          generatedAt: new Date().toISOString(),
+          tagCount: 5,
+          tags: [
+            {
+              id: "root/x00100010",
+              nodeType: "element",
+              tag: "00100010",
+              displayTag: "(0010,0010)",
+              name: "Patient Name",
+              keyword: "PatientName",
+              vr: "PN",
+              value: "Demo^Patient",
+              length: 12,
+              children: [],
+            },
+            {
+              id: "root/x00082112",
+              nodeType: "element",
+              tag: "00082112",
+              displayTag: "(0008,2112)",
+              name: "Source Image Sequence",
+              keyword: "SourceImageSequence",
+              vr: "SQ",
+              value: "1 item",
+              length: null,
+              children: [
+                {
+                  id: "root/x00082112/item-1",
+                  nodeType: "item",
+                  tag: "item-1",
+                  displayTag: "Item #1",
+                  name: "Sequence Item",
+                  keyword: null,
+                  vr: "ITEM",
+                  value: "2 tags",
+                  length: null,
+                  children: [
+                    {
+                      id: "root/x00082112/item-1/x00081150",
+                      nodeType: "element",
+                      tag: "00081150",
+                      displayTag: "(0008,1150)",
+                      name: "Referenced SOP Class UID",
+                      keyword: "ReferencedSOPClassUID",
+                      vr: "UI",
+                      value: "1.2.840.10008.5.1.4.1.1.2",
+                      length: 26,
+                      children: [],
+                    },
+                    {
+                      id: "root/x00082112/item-1/x00081155",
+                      nodeType: "element",
+                      tag: "00081155",
+                      displayTag: "(0008,1155)",
+                      name: "Referenced SOP Instance UID",
+                      keyword: "ReferencedSOPInstanceUID",
+                      vr: "UI",
+                      value: "1.2.3.4.5",
+                      length: 10,
+                      children: [],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    });
+
+    await waitForViewerReady(page);
+
+    await page.keyboard.press("F2");
+
+    await expect(page.getByTestId("dicom-tag-modal")).toBeVisible();
+    await expect(page.getByText("Patient Name")).toBeVisible();
+    await expect(page.getByText("Demo^Patient")).toBeVisible();
+    await expect(page.getByTestId("dicom-tag-count")).toHaveCount(0);
+
+    const patientNameRow = page.locator("tr", { hasText: "Patient Name" });
+    const sequenceRow = page.locator("tr", { hasText: "Source Image Sequence" });
+
+    await expect(patientNameRow.locator(".ant-table-row-expand-icon")).toHaveCount(0);
+    await expect(sequenceRow.locator(".ant-table-row-expand-icon")).toHaveCount(1);
+
+    const searchInput = page.getByPlaceholder("搜索 Tag 编号、名称或关键字");
+
+    await searchInput.fill("00100010");
+    await expect(page.getByText("Patient Name")).toBeVisible();
+    await expect(page.getByText("Source Image Sequence")).toHaveCount(0);
+
+    await searchInput.fill("Referenced SOP Instance UID");
+    await expect(page.getByText("Referenced SOP Instance UID")).toBeVisible();
+    await expect(page.getByText("Item #1")).toBeVisible();
+    await expect(page.getByText("Source Image Sequence")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("dicom-tag-modal")).not.toBeVisible();
+  });
+
   test("layout switch expands to multiple auto-filled viewports", async ({
     page,
   }) => {
@@ -383,6 +609,181 @@ test.describe("DICOM viewer smoke coverage", () => {
     ).toEqual([]);
   });
 
+  test("same-study stack viewports sync by slice position", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await waitForViewerReady(page);
+
+    await page.getByTestId("viewport-layout-button").click();
+    await page.getByTestId("viewport-layout-option-2x1").click();
+
+    const firstViewportStage = page
+      .getByTestId("viewport-slot-viewport-1")
+      .getByTestId("viewport-stage");
+    const secondViewportStage = page
+      .getByTestId("viewport-slot-viewport-2")
+      .getByTestId("viewport-stage");
+    const firstSeriesCard = page.getByTestId("series-card").first();
+
+    await secondViewportStage.click({
+      position: {
+        x: 24,
+        y: 24,
+      },
+    });
+    await firstSeriesCard.click();
+    await expect(secondViewportStage).toHaveAttribute("data-status", "ready", {
+      timeout: 60_000,
+    });
+
+    await firstViewportStage.click({
+      position: {
+        x: 24,
+        y: 24,
+      },
+    });
+    await toggleSequenceSync(page, "sameStudy");
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "sameStudy",
+    );
+
+    await secondViewportStage.click({
+      position: {
+        x: 24,
+        y: 24,
+      },
+    });
+    await toggleSequenceSync(page, "sameStudy");
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "sameStudy",
+    );
+
+    await firstViewportStage.click({
+      position: {
+        x: 36,
+        y: 36,
+      },
+    });
+    await page.mouse.wheel(0, 640);
+
+    await expect(firstViewportStage).not.toHaveAttribute("data-frame-index", "1");
+    const syncedFrameIndex = await firstViewportStage.getAttribute("data-frame-index");
+
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-frame-index",
+      syncedFrameIndex ?? "1",
+    );
+  });
+
+  test("cross-study stack viewports sync after calibration", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await waitForViewerReady(page);
+
+    await page.getByTestId("viewport-layout-button").click();
+    await page.getByTestId("viewport-layout-option-2x1").click();
+
+    const firstViewportStage = page
+      .getByTestId("viewport-slot-viewport-1")
+      .getByTestId("viewport-stage");
+    const secondViewportStage = page
+      .getByTestId("viewport-slot-viewport-2")
+      .getByTestId("viewport-stage");
+    const thirdSeriesCard = page.getByTestId("series-card").nth(2);
+
+    await secondViewportStage.click({
+      position: {
+        x: 24,
+        y: 24,
+      },
+    });
+    await thirdSeriesCard.click();
+    await expect(secondViewportStage).toHaveAttribute("data-status", "ready", {
+      timeout: 60_000,
+    });
+
+    await scrollViewportFrames(page, firstViewportStage, 960, 18);
+    await expect(firstViewportStage).not.toHaveAttribute("data-frame-index", "1");
+
+    await scrollViewportFrames(page, secondViewportStage, 960, 3);
+    await expect(secondViewportStage).not.toHaveAttribute("data-frame-index", "1");
+
+    await firstViewportStage.click({
+      position: {
+        x: 24,
+        y: 24,
+      },
+    });
+    await toggleSequenceSync(page, "crossStudy");
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "crossStudy",
+    );
+
+    await secondViewportStage.click({
+      position: {
+        x: 24,
+        y: 24,
+      },
+    });
+    await toggleSequenceSync(page, "crossStudy");
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "crossStudy",
+    );
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-cross-study-calibration-count",
+      "1",
+    );
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-cross-study-calibration-count",
+      "1",
+    );
+
+    const firstViewportFrameIndexBefore =
+      (await firstViewportStage.getAttribute("data-frame-index")) ?? "0";
+    const secondViewportFrameIndexBefore =
+      (await secondViewportStage.getAttribute("data-frame-index")) ?? "0";
+
+    await scrollViewportFrames(page, secondViewportStage, -960, 2);
+
+    await expect(secondViewportStage).not.toHaveAttribute(
+      "data-frame-index",
+      secondViewportFrameIndexBefore,
+    );
+    await expect(firstViewportStage).not.toHaveAttribute(
+      "data-frame-index",
+      firstViewportFrameIndexBefore,
+    );
+  });
+
+  test("same-study and cross-study sync can be enabled together", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await waitForViewerReady(page);
+
+    const viewportStage = page.getByTestId("viewport-stage");
+
+    await toggleSequenceSync(page, "sameStudy");
+    await expect(viewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "sameStudy",
+    );
+
+    await toggleSequenceSync(page, "crossStudy");
+    await expect(viewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "sameStudy,crossStudy",
+    );
+
+    await clearSequenceSync(page);
+    await expect(viewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "off",
+    );
+  });
+
   test("double click maximizes a viewport and restores the previous layout", async ({
     page,
   }) => {
@@ -431,6 +832,92 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(viewportGrid).toHaveAttribute("data-layout-count", "4");
     await expect(viewportGrid).toHaveAttribute("data-maximized-viewport-id", "");
     await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(4);
+  });
+
+  test("selected viewports can switch into independent MPR layouts", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await waitForViewerReady(page);
+
+    await page.getByTestId("viewport-layout-button").click();
+    await page.getByTestId("viewport-layout-option-2x2").click();
+
+    const firstViewportSlot = page.getByTestId("viewport-slot-viewport-1");
+    const firstViewportStage = firstViewportSlot.getByTestId("viewport-stage");
+    const secondViewportSlot = page.getByTestId("viewport-slot-viewport-2");
+    const secondViewportStage = secondViewportSlot.getByTestId("viewport-stage");
+
+    await page.getByTestId("viewport-mpr-layout-button").click();
+    await page.getByTestId("viewport-mpr-layout-option-left1Right2").click();
+
+    await expect(firstViewportStage).toHaveAttribute("data-status", /ready|error/, {
+      timeout: 60_000,
+    });
+    await expect(firstViewportStage).toHaveAttribute("data-view-mode", "mpr");
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-mpr-layout-id",
+      "left1Right2",
+    );
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-mpr-primary-tool",
+      "crosshairs",
+    );
+    await expect(firstViewportSlot.getByTestId("mpr-pane")).toHaveCount(3);
+    if ((await firstViewportStage.getAttribute("data-status")) === "ready") {
+      await expect(firstViewportSlot.getByTestId("mpr-pane-scrollbar")).toHaveCount(
+        3,
+      );
+    }
+
+    await secondViewportStage.click({
+      position: {
+        x: 36,
+        y: 36,
+      },
+    });
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-viewport-selected",
+      "true",
+    );
+
+    await page.getByTestId("viewport-mpr-layout-button").click();
+    await page.getByTestId("viewport-mpr-layout-option-top1Bottom2").click();
+
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-status",
+      /ready|error/,
+      {
+      timeout: 60_000,
+      },
+    );
+    await expect(secondViewportStage).toHaveAttribute("data-view-mode", "mpr");
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-mpr-layout-id",
+      "top1Bottom2",
+    );
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-mpr-primary-tool",
+      "crosshairs",
+    );
+    await expect(secondViewportSlot.getByTestId("mpr-pane")).toHaveCount(3);
+    if ((await secondViewportStage.getAttribute("data-status")) === "ready") {
+      await expect(secondViewportSlot.getByTestId("mpr-pane-scrollbar")).toHaveCount(
+        3,
+      );
+    }
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-mpr-layout-id",
+      "left1Right2",
+    );
+
+    await page.getByTestId("viewport-mpr-layout-button").click();
+    await page.getByTestId("viewport-mpr-layout-option-off").click();
+
+    await expect(secondViewportStage).toHaveAttribute("data-view-mode", "stack");
+    await expect(secondViewportSlot.getByTestId("mpr-pane")).toHaveCount(0);
+    await expect(firstViewportStage).toHaveAttribute("data-view-mode", "mpr");
+    await expect(firstViewportSlot.getByTestId("mpr-pane")).toHaveCount(3);
   });
 
   test("image layout switches the selected viewport into a montage grid", async ({
@@ -538,6 +1025,11 @@ test.describe("DICOM viewer smoke coverage", () => {
     }
 
     if (frameCount > 4) {
+      const scrollTopBefore = await page.evaluate(
+        () => document.scrollingElement?.scrollTop ?? 0,
+      );
+      const stageBoxBefore = await viewportStage.boundingBox();
+
       await viewportStage.hover();
       await page.mouse.wheel(0, 320);
 
@@ -555,6 +1047,17 @@ test.describe("DICOM viewer smoke coverage", () => {
       ).toContainText(
         `[${nextStartFrame}]/[${frameCount}]`,
       );
+
+      const scrollTopAfter = await page.evaluate(
+        () => document.scrollingElement?.scrollTop ?? 0,
+      );
+      const stageBoxAfter = await viewportStage.boundingBox();
+
+      expect(scrollTopAfter).toBe(scrollTopBefore);
+      expect(stageBoxBefore).not.toBeNull();
+      expect(stageBoxAfter).not.toBeNull();
+      expect(Math.abs(stageBoxAfter!.x - stageBoxBefore!.x)).toBeLessThan(1);
+      expect(Math.abs(stageBoxAfter!.y - stageBoxBefore!.y)).toBeLessThan(1);
     }
   });
 
@@ -565,6 +1068,7 @@ test.describe("DICOM viewer smoke coverage", () => {
     await waitForViewerReady(page);
 
     const viewportStage = page.getByTestId("viewport-stage");
+    const viewportCanvas = viewportStage.locator(".viewport-canvas");
     const stageBox = await viewportStage.boundingBox();
     const frameCount = Number(
       (await viewportStage.getAttribute("data-frame-count")) ?? "0",
@@ -578,6 +1082,11 @@ test.describe("DICOM viewer smoke coverage", () => {
     );
     await expect(viewportStage).toHaveAttribute("data-active-tool", "select");
     await expect(viewportStage).toHaveAttribute("data-viewport-selected", "true");
+    await expect(viewportStage).toHaveAttribute(
+      "data-select-scroll-active",
+      "false",
+    );
+    await expect(viewportCanvas).toHaveCSS("cursor", "default");
 
     if (frameCount > 1) {
       const startX = stageBox!.x + stageBox!.width * 0.5;
@@ -587,8 +1096,16 @@ test.describe("DICOM viewer smoke coverage", () => {
       await page.mouse.move(startX, startY);
       await page.mouse.down();
       await page.mouse.move(startX, endY, { steps: 12 });
+      await expect(viewportStage).toHaveAttribute(
+        "data-select-scroll-active",
+        "true",
+      );
       await page.mouse.up();
 
+      await expect(viewportStage).toHaveAttribute(
+        "data-select-scroll-active",
+        "false",
+      );
       await expect(viewportStage).not.toHaveAttribute("data-frame-index", "1");
     }
   });
@@ -708,7 +1225,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     const measureTrigger = page.getByTestId(
       "viewport-tool-group-measure-trigger",
     );
-    const measureSelect = page.getByTestId("viewport-tool-group-measure-select");
+    const measureMenuTrigger = page.getByTestId(
+      "viewport-tool-group-measure-select",
+    );
     const stageBox = await viewportStage.boundingBox();
 
     expect(stageBox).not.toBeNull();
@@ -738,10 +1257,12 @@ test.describe("DICOM viewer smoke coverage", () => {
     );
     await expect(viewportStage).toHaveAttribute("data-annotation-total", "1");
 
-    await measureSelect.selectOption("angle");
+    await measureMenuTrigger.click();
+    await page.getByTestId("viewport-tool-group-measure-option-angle").click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "angle");
 
-    await measureSelect.selectOption("polyline");
+    await measureMenuTrigger.click();
+    await page.getByTestId("viewport-tool-group-measure-option-polyline").click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "polyline");
     await expect(viewportStage).toHaveAttribute(
       "data-active-annotation-count",
@@ -765,7 +1286,8 @@ test.describe("DICOM viewer smoke coverage", () => {
     );
     await expect(viewportStage).toHaveAttribute("data-annotation-total", "2");
 
-    await measureSelect.selectOption("freehand");
+    await measureMenuTrigger.click();
+    await page.getByTestId("viewport-tool-group-measure-option-freehand").click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "freehand");
   });
 
@@ -774,12 +1296,15 @@ test.describe("DICOM viewer smoke coverage", () => {
     await waitForViewerReady(page);
 
     const viewportStage = page.getByTestId("viewport-stage");
-    const measureSelect = page.getByTestId("viewport-tool-group-measure-select");
+    const measureMenuTrigger = page.getByTestId(
+      "viewport-tool-group-measure-select",
+    );
     const stageBox = await viewportStage.boundingBox();
 
     expect(stageBox).not.toBeNull();
 
-    await measureSelect.selectOption("polyline");
+    await measureMenuTrigger.click();
+    await page.getByTestId("viewport-tool-group-measure-option-polyline").click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "polyline");
 
     const startX = stageBox!.x + stageBox!.width * 0.28;
@@ -836,7 +1361,7 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     const viewportStage = page.getByTestId("viewport-stage");
     const roiTrigger = page.getByTestId("viewport-tool-group-roi-trigger");
-    const roiSelect = page.getByTestId("viewport-tool-group-roi-select");
+    const roiMenuTrigger = page.getByTestId("viewport-tool-group-roi-select");
     const stageBox = await viewportStage.boundingBox();
 
     expect(stageBox).not.toBeNull();
@@ -869,10 +1394,12 @@ test.describe("DICOM viewer smoke coverage", () => {
     );
     await expect(viewportStage).toHaveAttribute("data-annotation-total", "1");
 
-    await roiSelect.selectOption("ellipseRoi");
+    await roiMenuTrigger.click();
+    await page.getByTestId("viewport-tool-group-roi-option-ellipseRoi").click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "ellipseRoi");
 
-    await roiSelect.selectOption("circleRoi");
+    await roiMenuTrigger.click();
+    await page.getByTestId("viewport-tool-group-roi-option-circleRoi").click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "circleRoi");
   });
 
@@ -886,7 +1413,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     const measureTrigger = page.getByTestId(
       "viewport-tool-group-measure-trigger",
     );
-    const measureSelect = page.getByTestId("viewport-tool-group-measure-select");
+    const measureMenuTrigger = page.getByTestId(
+      "viewport-tool-group-measure-select",
+    );
     const stageBox = await viewportStage.boundingBox();
 
     expect(stageBox).not.toBeNull();
@@ -904,7 +1433,8 @@ test.describe("DICOM viewer smoke coverage", () => {
     await page.mouse.move(lengthEndX, lengthEndY, { steps: 10 });
     await page.mouse.up();
 
-    await measureSelect.selectOption("polyline");
+    await measureMenuTrigger.click();
+    await page.getByTestId("viewport-tool-group-measure-option-polyline").click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "polyline");
 
     const polylineStartX = stageBox!.x + stageBox!.width * 0.26;

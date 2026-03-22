@@ -6,6 +6,7 @@ import {
   getViewportToolFromCornerstoneName,
   getViewportToolShortLabel,
   isViewportAnnotationTool,
+  MPR_COMPATIBLE_VIEWPORT_TOOLS,
   POLYLINE_MEASURE_TOOL_NAME,
   type ViewportTool,
 } from "@/lib/tools/registry";
@@ -16,33 +17,35 @@ import {
 
 const VIEWPORT_ANNOTATION_TOOL_STYLES = {
   global: {
-    color: "rgb(255, 196, 77)",
-    colorHighlighted: "rgb(56, 221, 255)",
-    colorSelected: "rgb(255, 96, 96)",
-    lineWidth: "2",
-    lineWidthHighlighted: "4",
-    lineWidthSelected: "4",
-    markerSize: "8",
-    markerSizeHighlighted: "11",
-    markerSizeSelected: "11",
-    showHandlesAlwaysHighlighted: true,
+    color: "#00ff00",
+    colorHighlighted: "#FF00FF",
+    colorSelected: "#FF00FF",
+    lineWidth: "1.25",
+    lineWidthHighlighted: "2",
+    lineWidthSelected: "2",
+    markerSize: "6",
+    markerSizeHighlighted: "8",
+    markerSizeSelected: "8",
+    showHandlesAlwaysHighlighted: false,
     showHandlesAlwaysSelected: true,
-    textBoxColor: "rgb(255, 232, 193)",
-    textBoxColorHighlighted: "rgb(188, 246, 255)",
-    textBoxColorSelected: "rgb(255, 216, 216)",
+    textBoxColor: "#00ff00",
+    textBoxColorHighlighted: "#FF00FF",
+    textBoxColorSelected: "#FF00FF",
     textBoxBackground: "rgba(10, 14, 20, 0.84)",
-    textBoxBackgroundHighlighted: "rgba(10, 54, 68, 0.92)",
-    textBoxBackgroundSelected: "rgba(76, 20, 28, 0.92)",
-    textBoxLinkLineWidth: "1.5",
-    textBoxLinkLineWidthHighlighted: "2.5",
-    textBoxLinkLineWidthSelected: "2.5",
-    textBoxLinkLineColor: "rgb(255, 196, 77)",
-    textBoxLinkLineColorHighlighted: "rgb(56, 221, 255)",
-    textBoxLinkLineColorSelected: "rgb(255, 96, 96)",
+    textBoxBackgroundHighlighted: "rgba(48, 8, 48, 0.9)",
+    textBoxBackgroundSelected: "rgba(48, 8, 48, 0.9)",
+    textBoxLinkLineWidth: "1",
+    textBoxLinkLineWidthHighlighted: "1.75",
+    textBoxLinkLineWidthSelected: "1.75",
+    textBoxLinkLineColor: "#00ff00",
+    textBoxLinkLineColorHighlighted: "#FF00FF",
+    textBoxLinkLineColorSelected: "#FF00FF",
   },
 } satisfies Parameters<
   typeof import("@cornerstonejs/tools").annotation.config.style.setToolGroupToolStyles
 >[1];
+
+export const MPR_CROSSHAIRS_TOOL_NAME = "Crosshairs";
 
 interface CornerstoneAnnotationLike {
   annotationUID?: string;
@@ -256,6 +259,7 @@ export function registerCornerstoneViewportTools(
     tools.StackScrollTool,
     tools.PanTool,
     tools.WindowLevelTool,
+    tools.CrosshairsTool,
     tools.LengthTool,
     tools.AngleTool,
     tools.PlanarFreehandROITool,
@@ -306,7 +310,52 @@ export function configureViewportToolGroup(
   );
 }
 
+export function configureMprViewportToolGroup(
+  tools: typeof import("@cornerstonejs/tools"),
+  toolGroup: NonNullable<
+    ReturnType<typeof tools.ToolGroupManager.createToolGroup>
+  >,
+  crosshairsConfiguration: Record<string, unknown>,
+) {
+  toolGroup.addTool(tools.PanTool.toolName);
+  toolGroup.addTool(tools.WindowLevelTool.toolName);
+  toolGroup.addTool(MPR_CROSSHAIRS_TOOL_NAME, crosshairsConfiguration);
+}
+
 export function applyActiveViewportTool(
+  tools: typeof import("@cornerstonejs/tools"),
+  toolGroupId: string,
+  activeTool: ViewportTool,
+  supportedToolIds = getViewportToolDefinitions().map(
+    (toolDefinition) => toolDefinition.id,
+  ),
+) {
+  const toolGroup = tools.ToolGroupManager.getToolGroup(toolGroupId);
+
+  if (!toolGroup) {
+    return;
+  }
+
+  for (const toolId of supportedToolIds) {
+    toolGroup.setToolPassive(getViewportToolCornerstoneName(toolId), {
+      removeAllBindings: true,
+    });
+  }
+
+  const nextActiveTool = supportedToolIds.includes(activeTool)
+    ? activeTool
+    : MPR_COMPATIBLE_VIEWPORT_TOOLS[0];
+
+  toolGroup.setToolActive(getViewportToolCornerstoneName(nextActiveTool), {
+    bindings: [
+      {
+        mouseButton: tools.Enums.MouseBindings.Primary,
+      },
+    ],
+  });
+}
+
+export function applyActiveMprViewportTool(
   tools: typeof import("@cornerstonejs/tools"),
   toolGroupId: string,
   activeTool: ViewportTool,
@@ -317,16 +366,24 @@ export function applyActiveViewportTool(
     return;
   }
 
-  for (const toolDefinition of getViewportToolDefinitions()) {
-    toolGroup.setToolPassive(
-      getViewportToolCornerstoneName(toolDefinition.id),
-      {
-        removeAllBindings: true,
-      },
-    );
+  for (const toolName of [
+    MPR_CROSSHAIRS_TOOL_NAME,
+    tools.PanTool.toolName,
+    tools.WindowLevelTool.toolName,
+  ]) {
+    toolGroup.setToolPassive(toolName, {
+      removeAllBindings: true,
+    });
   }
 
-  toolGroup.setToolActive(getViewportToolCornerstoneName(activeTool), {
+  const nextActiveToolName =
+    activeTool === "pan"
+      ? tools.PanTool.toolName
+      : activeTool === "windowLevel"
+        ? tools.WindowLevelTool.toolName
+        : MPR_CROSSHAIRS_TOOL_NAME;
+
+  toolGroup.setToolActive(nextActiveToolName, {
     bindings: [
       {
         mouseButton: tools.Enums.MouseBindings.Primary,

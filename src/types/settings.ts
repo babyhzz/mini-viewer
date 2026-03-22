@@ -24,6 +24,7 @@ export type ToolbarShortcutCommandId =
   | "ellipseRoi"
   | "circleRoi"
   | "invert"
+  | "dicomTag"
   | "annotationList"
   | "settings";
 

@@ -9,8 +9,13 @@ export type ViewportTool =
   | "rectangleRoi"
   | "ellipseRoi"
   | "circleRoi";
-export type ViewportAction = "invert" | "annotationList";
-export type ViewportToolbarMenu = "layout" | "imageLayout" | "annotationManage";
+export type ViewportAction = "invert" | "dicomTag" | "annotationList";
+export type ViewportToolbarMenu =
+  | "layout"
+  | "imageLayout"
+  | "mprLayout"
+  | "sequenceSync"
+  | "annotationManage";
 export type ViewportToolGroupId = "measure" | "roi";
 export type ViewportToolbarItemId =
   | ViewportTool
@@ -23,9 +28,12 @@ export type ViewportToolbarIconKey =
   | "windowLevel"
   | "layout"
   | "imageLayout"
+  | "mprLayout"
+  | "sequenceSync"
   | "measure"
   | "roi"
   | "invert"
+  | "dicomTag"
   | "annotationManage"
   | "annotationList";
 
@@ -213,6 +221,11 @@ const viewportActionDefinitions: Record<ViewportAction, ViewportActionDefinition
       label: "反色",
       hint: "单击切换黑白反色",
     },
+    dicomTag: {
+      id: "dicomTag",
+      label: "Dicom Tag",
+      hint: "查看当前图像的 DICOM Tag",
+    },
     annotationList: {
       id: "annotationList",
       label: "图元列表",
@@ -238,6 +251,16 @@ const viewportToolbarMenuDefinitions: Record<
     id: "annotationManage",
     label: "删除图元",
     hint: "删除选中图元或清空当前视口",
+  },
+  mprLayout: {
+    id: "mprLayout",
+    label: "MPR",
+    hint: "切换当前视口的 MPR 三视图布局",
+  },
+  sequenceSync: {
+    id: "sequenceSync",
+    label: "序列同步",
+    hint: "切换当前视口的同检查或跨检查序列同步",
   },
 };
 
@@ -305,11 +328,32 @@ export const viewportToolbarItems: ViewportToolbarItemDefinition[] = [
     iconKey: "invert",
   },
   {
+    id: "dicomTag",
+    kind: "action",
+    label: "Dicom Tag",
+    hint: viewportActionDefinitions.dicomTag.hint,
+    iconKey: "dicomTag",
+  },
+  {
     id: "imageLayout",
     kind: "menu",
     label: "图像布局",
     hint: viewportToolbarMenuDefinitions.imageLayout.hint,
     iconKey: "imageLayout",
+  },
+  {
+    id: "mprLayout",
+    kind: "menu",
+    label: "MPR",
+    hint: viewportToolbarMenuDefinitions.mprLayout.hint,
+    iconKey: "mprLayout",
+  },
+  {
+    id: "sequenceSync",
+    kind: "menu",
+    label: "序列同步",
+    hint: viewportToolbarMenuDefinitions.sequenceSync.hint,
+    iconKey: "sequenceSync",
   },
   {
     id: "layout",
@@ -324,13 +368,6 @@ export const viewportToolbarItems: ViewportToolbarItemDefinition[] = [
     label: "删除图元",
     hint: viewportToolbarMenuDefinitions.annotationManage.hint,
     iconKey: "annotationManage",
-  },
-  {
-    id: "annotationList",
-    kind: "action",
-    label: "图元列表",
-    hint: viewportActionDefinitions.annotationList.hint,
-    iconKey: "annotationList",
   },
 ];
 
@@ -385,6 +422,16 @@ export function getViewportToolDisplayLabel(toolId: ViewportTool) {
 
 export function getViewportToolShortLabel(toolId: ViewportTool) {
   return viewportToolDefinitions[toolId].shortLabel;
+}
+
+export const MPR_COMPATIBLE_VIEWPORT_TOOLS: ViewportTool[] = [
+  "select",
+  "pan",
+  "windowLevel",
+];
+
+export function isViewportToolSupportedInMpr(toolId: ViewportTool) {
+  return MPR_COMPATIBLE_VIEWPORT_TOOLS.includes(toolId);
 }
 
 export function getViewportToolInteractionHint(toolId: ViewportTool) {

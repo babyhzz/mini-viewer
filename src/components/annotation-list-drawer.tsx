@@ -30,7 +30,7 @@ export function AnnotationListDrawer({
       title="图元列表"
       placement="right"
       open={open}
-      width={420}
+      width={384}
       closeIcon={<BootstrapIcon name="x-lg" />}
       onClose={onClose}
       footer={
@@ -57,8 +57,8 @@ export function AnnotationListDrawer({
       <div className="annotation-list-summary" data-testid="annotation-list-drawer">
         <div>
           <div className="annotation-list-kicker">Current Viewport</div>
-          <h3>图元总览</h3>
-          <p>点击列表项可切换当前选中图元，右侧按钮可直接删除单条。</p>
+          <h3>当前视口图元</h3>
+          <p>点击列表项可定位图元，右侧可直接删除。</p>
         </div>
         <div className="annotation-list-summary-tags">
           <Tag bordered={false}>总计 {annotations.length}</Tag>
@@ -87,20 +87,18 @@ export function AnnotationListDrawer({
                     <Tag className="annotation-list-item-tag" bordered={false}>
                       {annotation.toolShortLabel}
                     </Tag>
-                    <strong>{annotation.toolLabel}</strong>
+                  </div>
+                  <div className="annotation-list-item-meta">
+                    <span className="annotation-list-item-frame">
+                      {annotation.frameLabel}
+                    </span>
                     {annotation.isSelected ? (
-                      <span className="annotation-list-item-badge">已选中</span>
+                      <span className="annotation-list-item-badge">已选</span>
                     ) : null}
                   </div>
-                  <span className="annotation-list-item-frame">
-                    {annotation.frameLabel}
-                  </span>
                 </div>
                 <div className="annotation-list-item-description">
                   {annotation.description}
-                </div>
-                <div className="annotation-list-item-uid">
-                  {annotation.annotationUID}
                 </div>
               </button>
               <button

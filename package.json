@@ -23,6 +23,7 @@
     "antd": "^5.28.0",
     "better-sqlite3": "^12.8.0",
     "bootstrap-icons": "^1.13.1",
+    "dicom-data-dictionary": "^0.3.1",
     "next": "^15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

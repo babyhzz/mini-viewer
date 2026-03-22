@@ -66,6 +66,28 @@ function formatDicomDate(value: string | undefined) {
   return `${year}-${month}-${day}`;
 }
 
+function parseDicomNumberList(
+  value: string | undefined,
+  expectedLength: number,
+): number[] | undefined {
+  const normalizedValue = normalizeDicomText(value);
+
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  const values = normalizedValue
+    .split("\\")
+    .map((entry) => Number(entry.trim()))
+    .filter((entry) => Number.isFinite(entry));
+
+  if (values.length !== expectedLength) {
+    return undefined;
+  }
+
+  return values;
+}
+
 function buildStudyTitle(title: string | undefined, index: number) {
   return title ?? `未命名检查 ${index + 1}`;
 }
@@ -115,8 +137,16 @@ async function readDicomFileMetadata(relativePath: string) {
   try {
     const fileBuffer = await readFile(path.join(DICOM_ROOT, relativePath));
     const dataSet = parseDicom(fileBuffer, {
-      untilTag: "x00200013",
+      untilTag: "x00200052",
     });
+    const imagePositionPatient = parseDicomNumberList(
+      dataSet.string("x00200032"),
+      3,
+    );
+    const imageOrientationPatient = parseDicomNumberList(
+      dataSet.string("x00200037"),
+      6,
+    );
 
     return {
       studyTitle: normalizeDicomText(dataSet.string("x00081030")),
@@ -127,6 +157,22 @@ async function readDicomFileMetadata(relativePath: string) {
       patientId: normalizeDicomText(dataSet.string("x00100020")),
       studyDate: formatDicomDate(dataSet.string("x00080020")),
       instanceNumber: dataSet.intString("x00200013"),
+      imagePositionPatient:
+        imagePositionPatient && imagePositionPatient.length === 3
+          ? (imagePositionPatient as [number, number, number])
+          : undefined,
+      imageOrientationPatient:
+        imageOrientationPatient && imageOrientationPatient.length === 6
+          ? (imageOrientationPatient as [
+              number,
+              number,
+              number,
+              number,
+              number,
+              number,
+            ])
+          : undefined,
+      frameOfReferenceUID: normalizeDicomText(dataSet.string("x00200052")),
     };
   } catch (error) {
     console.warn(`Failed to read DICOM metadata for ${relativePath}`, error);
@@ -140,6 +186,9 @@ async function readDicomFileMetadata(relativePath: string) {
       patientId: undefined,
       studyDate: undefined,
       instanceNumber: undefined,
+      imagePositionPatient: undefined,
+      imageOrientationPatient: undefined,
+      frameOfReferenceUID: undefined,
     };
   }
 }
@@ -232,6 +281,9 @@ export async function readDicomHierarchy(): Promise<DicomHierarchyResponse> {
         filePath: entry.filePath,
         dicomUrl: createDicomFileUrl(entry.filePath),
         instanceNumber: entry.metadata.instanceNumber,
+        imagePositionPatient: entry.metadata.imagePositionPatient,
+        imageOrientationPatient: entry.metadata.imageOrientationPatient,
+        frameOfReferenceUID: entry.metadata.frameOfReferenceUID,
       }));
 
       const displayMetadata = imageEntries[0].metadata;
