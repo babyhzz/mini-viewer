@@ -2,7 +2,7 @@
 
 import { Button, Drawer, Empty, Tag } from "antd";
 
-import { BootstrapIcon } from "@/components/bootstrap-icon";
+import { AppIcon } from "@/components/app-icon";
 import type { ViewportAnnotationEntry } from "@/lib/tools/cornerstone-tool-adapter";
 
 interface AnnotationListDrawerProps {
@@ -31,7 +31,7 @@ export function AnnotationListDrawer({
       placement="right"
       open={open}
       width={384}
-      closeIcon={<BootstrapIcon name="x-lg" />}
+      closeIcon={<AppIcon name="x-lg" className="app-icon" />}
       onClose={onClose}
       footer={
         <div className="annotation-list-footer">
@@ -108,7 +108,7 @@ export function AnnotationListDrawer({
                 data-testid={`annotation-list-delete-${annotation.annotationUID}`}
                 onClick={() => onDeleteAnnotation(annotation.annotationUID)}
               >
-                <BootstrapIcon name="trash3" />
+                <AppIcon name="trash3" className="app-icon" />
               </button>
             </div>
           ))}

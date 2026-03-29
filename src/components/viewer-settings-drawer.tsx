@@ -18,7 +18,7 @@ import {
 import type { Color } from "antd/es/color-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { BootstrapIcon } from "@/components/bootstrap-icon";
+import { AppIcon } from "@/components/app-icon";
 import {
   cloneViewerSettings,
   createDefaultViewerSettings,
@@ -498,7 +498,7 @@ export function ViewerSettingsDrawer({
           placement="right"
           open={open}
           width={1040}
-          closeIcon={<BootstrapIcon name="x-lg" />}
+          closeIcon={<AppIcon name="x-lg" className="app-icon" />}
           onClose={onClose}
           styles={{
             body: {
@@ -512,7 +512,7 @@ export function ViewerSettingsDrawer({
                   <Alert
                     type="error"
                     showIcon
-                    icon={<BootstrapIcon name="exclamation-circle" />}
+                    icon={<AppIcon name="exclamation-circle" className="app-icon" />}
                     message={saveError}
                     className="viewer-settings-alert"
                   />
@@ -527,7 +527,7 @@ export function ViewerSettingsDrawer({
                   关闭
                 </Button>
                 <Button
-                  icon={<BootstrapIcon name="arrow-clockwise" />}
+                  icon={<AppIcon name="arrow-clockwise" className="app-icon" />}
                   disabled={!differsFromDefault || isSaving}
                   onClick={() => {
                     setDraftSettings(cloneViewerSettings(defaultSettings));
@@ -539,7 +539,7 @@ export function ViewerSettingsDrawer({
                 </Button>
                 <Button
                   type="primary"
-                  icon={<BootstrapIcon name="floppy" />}
+                  icon={<AppIcon name="floppy" className="app-icon" />}
                   loading={isSaving}
                   disabled={!hasChanges}
                   onClick={handleSave}
@@ -627,7 +627,7 @@ export function ViewerSettingsDrawer({
                           </div>
                           <Button
                             size="small"
-                            icon={<BootstrapIcon name="plus-lg" />}
+                            icon={<AppIcon name="plus-lg" className="app-icon" />}
                             onClick={() => handleAddItem(corner)}
                           >
                             添加
@@ -656,7 +656,7 @@ export function ViewerSettingsDrawer({
                                     <Button
                                       size="small"
                                       type="text"
-                                      icon={<BootstrapIcon name="arrow-up" />}
+                                      icon={<AppIcon name="arrow-up" className="app-icon" />}
                                       disabled={itemIndex === 0}
                                       title="上移"
                                       onClick={() =>
@@ -666,7 +666,7 @@ export function ViewerSettingsDrawer({
                                     <Button
                                       size="small"
                                       type="text"
-                                      icon={<BootstrapIcon name="arrow-down" />}
+                                      icon={<AppIcon name="arrow-down" className="app-icon" />}
                                       disabled={itemIndex === items.length - 1}
                                       title="下移"
                                       onClick={() =>
@@ -676,7 +676,7 @@ export function ViewerSettingsDrawer({
                                     <Button
                                       size="small"
                                       type="text"
-                                      icon={<BootstrapIcon name="pencil-square" />}
+                                      icon={<AppIcon name="pencil-square" className="app-icon" />}
                                       title="编辑"
                                       data-testid={`viewer-settings-edit-${corner}-${itemIndex}`}
                                       onClick={() => {
@@ -691,7 +691,7 @@ export function ViewerSettingsDrawer({
                                       size="small"
                                       type="text"
                                       danger
-                                      icon={<BootstrapIcon name="trash3" />}
+                                      icon={<AppIcon name="trash3" className="app-icon" />}
                                       title="删除"
                                       onClick={() =>
                                         handleRemoveItem(corner, itemIndex)
@@ -709,7 +709,7 @@ export function ViewerSettingsDrawer({
                           >
                             <Button
                               size="small"
-                              icon={<BootstrapIcon name="plus-lg" />}
+                              icon={<AppIcon name="plus-lg" className="app-icon" />}
                               onClick={() => handleAddItem(corner)}
                             >
                               添加第一条
@@ -786,7 +786,7 @@ export function ViewerSettingsDrawer({
                   <Alert
                     type="info"
                     showIcon
-                    icon={<BootstrapIcon name="keyboard" />}
+                    icon={<AppIcon name="keyboard" className="app-icon" />}
                     className="viewer-settings-shortcut-capture-alert"
                     message={`正在录制 ${TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.find((definition) => definition.id === recordingShortcutId)?.label ?? "快捷键"}`}
                     description="请按下要绑定的组合键。Esc 取消，Backspace/Delete 清空当前绑定。"
@@ -831,9 +831,9 @@ export function ViewerSettingsDrawer({
                             </span>
                             <span className="viewer-settings-shortcut-group-icon">
                               {isCollapsed ? (
-                                <BootstrapIcon name="caret-right-fill" />
+                                <AppIcon name="caret-right-fill" className="app-icon" />
                               ) : (
-                                <BootstrapIcon name="chevron-down" />
+                                <AppIcon name="chevron-down" className="app-icon" />
                               )}
                             </span>
                           </button>
@@ -904,7 +904,7 @@ export function ViewerSettingsDrawer({
                                       <Button
                                         size="small"
                                         type="text"
-                                        icon={<BootstrapIcon name="arrow-clockwise" />}
+                                        icon={<AppIcon name="arrow-clockwise" className="app-icon" />}
                                         className="viewer-settings-shortcut-icon-button"
                                         data-testid={`viewer-settings-shortcut-reset-${definition.id}`}
                                         aria-label={`恢复 ${definition.label} 默认绑定`}
@@ -918,7 +918,7 @@ export function ViewerSettingsDrawer({
                                         size="small"
                                         type="text"
                                         danger
-                                        icon={<BootstrapIcon name="trash3" />}
+                                        icon={<AppIcon name="trash3" className="app-icon" />}
                                         className="viewer-settings-shortcut-icon-button"
                                         data-testid={`viewer-settings-shortcut-clear-${definition.id}`}
                                         aria-label={`清空 ${definition.label} 绑定`}
@@ -957,7 +957,7 @@ export function ViewerSettingsDrawer({
           open
           title={`编辑${VIEWPORT_CORNER_LABELS[editingTarget.corner]}信息项`}
           destroyOnHidden
-          closeIcon={<BootstrapIcon name="x-lg" />}
+          closeIcon={<AppIcon name="x-lg" className="app-icon" />}
           onCancel={() => setEditingTarget(null)}
           footer={
             <Button

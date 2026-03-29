@@ -1,6 +1,7 @@
 export type ViewportTool =
   | "select"
   | "pan"
+  | "zoom"
   | "windowLevel"
   | "length"
   | "polyline"
@@ -11,21 +12,36 @@ export type ViewportTool =
   | "circleRoi";
 export type ViewportAction = "invert" | "dicomTag" | "annotationList";
 export type ViewportToolbarMenu =
+  | "windowPreset"
   | "layout"
   | "imageLayout"
   | "mprLayout"
   | "sequenceSync"
   | "annotationManage";
+export type ViewportViewAction =
+  | "fit"
+  | "reset"
+  | "rotateRight"
+  | "flipHorizontal"
+  | "flipVertical";
 export type ViewportToolGroupId = "measure" | "roi";
 export type ViewportToolbarItemId =
   | ViewportTool
   | ViewportAction
   | ViewportToolbarMenu
-  | ViewportToolGroupId;
+  | ViewportToolGroupId
+  | ViewportViewAction;
 export type ViewportToolbarIconKey =
   | "select"
   | "pan"
+  | "zoom"
   | "windowLevel"
+  | "windowPreset"
+  | "fit"
+  | "reset"
+  | "rotateRight"
+  | "flipHorizontal"
+  | "flipVertical"
   | "layout"
   | "imageLayout"
   | "mprLayout"
@@ -50,6 +66,12 @@ interface ViewportToolDefinition {
 
 interface ViewportActionDefinition {
   id: ViewportAction;
+  label: string;
+  hint: string;
+}
+
+interface ViewportViewActionDefinition {
+  id: ViewportViewAction;
   label: string;
   hint: string;
 }
@@ -92,6 +114,14 @@ export interface ViewportToolbarGroupItem {
   iconKey: ViewportToolbarIconKey;
 }
 
+export interface ViewportToolbarViewActionItem {
+  id: ViewportViewAction;
+  kind: "viewAction";
+  label: string;
+  hint: string;
+  iconKey: ViewportToolbarIconKey;
+}
+
 export interface ViewportToolbarMenuItem {
   id: ViewportToolbarMenu;
   kind: "menu";
@@ -104,6 +134,7 @@ export type ViewportToolbarItemDefinition =
   | ViewportToolbarDirectToolItem
   | ViewportToolbarActionItem
   | ViewportToolbarGroupItem
+  | ViewportToolbarViewActionItem
   | ViewportToolbarMenuItem;
 
 export type ViewportToolGroupSelections = Record<
@@ -132,6 +163,15 @@ const viewportToolDefinitions: Record<ViewportTool, ViewportToolDefinition> = {
     interactionHint: "左键平移 · 滚轮翻页",
     createsAnnotation: false,
     cornerstoneToolName: "Pan",
+  },
+  zoom: {
+    id: "zoom",
+    label: "缩放",
+    shortLabel: "缩放",
+    hint: "左键上下拖动缩放图像",
+    interactionHint: "左键拖动缩放 · 滚轮翻页",
+    createsAnnotation: false,
+    cornerstoneToolName: "Zoom",
   },
   windowLevel: {
     id: "windowLevel",
@@ -214,29 +254,67 @@ const viewportToolDefinitions: Record<ViewportTool, ViewportToolDefinition> = {
   },
 };
 
-const viewportActionDefinitions: Record<ViewportAction, ViewportActionDefinition> =
-  {
-    invert: {
-      id: "invert",
-      label: "反色",
-      hint: "单击切换黑白反色",
-    },
-    dicomTag: {
-      id: "dicomTag",
-      label: "Dicom Tag",
-      hint: "查看当前图像的 DICOM Tag",
-    },
-    annotationList: {
-      id: "annotationList",
-      label: "图元列表",
-      hint: "打开当前视口图元列表",
-    },
-  };
+const viewportActionDefinitions: Record<
+  ViewportAction,
+  ViewportActionDefinition
+> = {
+  invert: {
+    id: "invert",
+    label: "反色",
+    hint: "单击切换黑白反色",
+  },
+  dicomTag: {
+    id: "dicomTag",
+    label: "Dicom Tag",
+    hint: "查看当前图像的 DICOM Tag",
+  },
+  annotationList: {
+    id: "annotationList",
+    label: "图元列表",
+    hint: "打开当前视口图元列表",
+  },
+};
+
+const viewportViewActionDefinitions: Record<
+  ViewportViewAction,
+  ViewportViewActionDefinition
+> = {
+  fit: {
+    id: "fit",
+    label: "适应窗口",
+    hint: "将图像缩放并居中到当前视口",
+  },
+  reset: {
+    id: "reset",
+    label: "重置视图",
+    hint: "恢复缩放、平移、旋转、翻转和窗宽窗位",
+  },
+  rotateRight: {
+    id: "rotateRight",
+    label: "顺时针旋转",
+    hint: "顺时针旋转当前图像 90 度",
+  },
+  flipHorizontal: {
+    id: "flipHorizontal",
+    label: "水平翻转",
+    hint: "按左右方向镜像当前图像",
+  },
+  flipVertical: {
+    id: "flipVertical",
+    label: "垂直翻转",
+    hint: "按上下方向镜像当前图像",
+  },
+};
 
 const viewportToolbarMenuDefinitions: Record<
   ViewportToolbarMenu,
   ViewportToolbarMenuDefinition
 > = {
+  windowPreset: {
+    id: "windowPreset",
+    label: "窗宽预设",
+    hint: "切换当前视口的窗宽窗位预设",
+  },
   layout: {
     id: "layout",
     label: "布局",
@@ -300,11 +378,25 @@ export const viewportToolbarItems: ViewportToolbarItemDefinition[] = [
     iconKey: "pan",
   },
   {
+    id: "zoom",
+    kind: "tool",
+    label: "缩放",
+    hint: viewportToolDefinitions.zoom.hint,
+    iconKey: "zoom",
+  },
+  {
     id: "windowLevel",
     kind: "tool",
     label: "调窗",
     hint: viewportToolDefinitions.windowLevel.hint,
     iconKey: "windowLevel",
+  },
+  {
+    id: "windowPreset",
+    kind: "menu",
+    label: "窗宽预设",
+    hint: viewportToolbarMenuDefinitions.windowPreset.hint,
+    iconKey: "windowPreset",
   },
   {
     id: "measure",
@@ -326,6 +418,27 @@ export const viewportToolbarItems: ViewportToolbarItemDefinition[] = [
     label: "反色",
     hint: viewportActionDefinitions.invert.hint,
     iconKey: "invert",
+  },
+  {
+    id: "fit",
+    kind: "viewAction",
+    label: "适应窗口",
+    hint: viewportViewActionDefinitions.fit.hint,
+    iconKey: "fit",
+  },
+  {
+    id: "reset",
+    kind: "viewAction",
+    label: "重置视图",
+    hint: viewportViewActionDefinitions.reset.hint,
+    iconKey: "reset",
+  },
+  {
+    id: "rotateRight",
+    kind: "viewAction",
+    label: "顺时针旋转",
+    hint: viewportViewActionDefinitions.rotateRight.hint,
+    iconKey: "rotateRight",
   },
   {
     id: "dicomTag",
@@ -390,6 +503,10 @@ export function getViewportActionDefinition(actionId: ViewportAction) {
   return viewportActionDefinitions[actionId];
 }
 
+export function getViewportViewActionDefinition(actionId: ViewportViewAction) {
+  return viewportViewActionDefinitions[actionId];
+}
+
 export function getViewportToolbarMenuDefinition(menuId: ViewportToolbarMenu) {
   return viewportToolbarMenuDefinitions[menuId];
 }
@@ -427,6 +544,7 @@ export function getViewportToolShortLabel(toolId: ViewportTool) {
 export const MPR_COMPATIBLE_VIEWPORT_TOOLS: ViewportTool[] = [
   "select",
   "pan",
+  "zoom",
   "windowLevel",
 ];
 
@@ -446,7 +564,9 @@ export function isViewportAnnotationTool(toolId: ViewportTool) {
   return viewportToolDefinitions[toolId].createsAnnotation;
 }
 
-export function getViewportToolFromCornerstoneName(cornerstoneToolName: string) {
+export function getViewportToolFromCornerstoneName(
+  cornerstoneToolName: string,
+) {
   const matchingDefinition = Object.values(viewportToolDefinitions).find(
     (toolDefinition) =>
       toolDefinition.cornerstoneToolName === cornerstoneToolName,

@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Spin } from "antd";
 
-import { BootstrapIcon } from "@/components/bootstrap-icon";
+import { AppIcon } from "@/components/app-icon";
 import { initializeCornerstone } from "@/lib/cornerstone/init";
 import { toCornerstoneImageId } from "@/lib/cornerstone/image-id";
 
@@ -83,10 +83,9 @@ export function ThumbnailCanvas({ dicomUrl, alt }: ThumbnailCanvasProps) {
           <Spin
             size="small"
             indicator={
-              <BootstrapIcon
+              <AppIcon
                 name="arrow-repeat"
-                spin
-                className="app-spin-indicator is-small"
+                className="app-icon app-spin-indicator is-small is-spin"
               />
             }
           />

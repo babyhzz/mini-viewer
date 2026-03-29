@@ -9,6 +9,10 @@
   --text-primary: #edf2f7;
   --text-secondary: #90a0b3;
   --danger: #ff6b81;
+  --icon-accent-muted: #52687d;
+  --icon-accent-hover: #627b93;
+  --icon-accent-active: #6f879f;
+  --viewer-toolbar-icon-size: 34px;
 }
 
 * {
@@ -44,19 +48,26 @@ select {
   font: inherit;
 }
 
-.bootstrap-icon {
+.app-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
 }
 
-.bootstrap-icon::before {
-  line-height: 1;
+.app-icon {
+  width: 1em;
+  height: 1em;
 }
 
-.bootstrap-icon.is-spin {
-  animation: bootstrap-icon-spin 0.9s linear infinite;
+.app-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.app-icon.is-spin {
+  animation: app-icon-spin 0.9s linear infinite;
 }
 
 .app-spin-indicator {
@@ -68,7 +79,7 @@ select {
   font-size: 0.95rem;
 }
 
-@keyframes bootstrap-icon-spin {
+@keyframes app-icon-spin {
   to {
     transform: rotate(360deg);
   }
@@ -293,24 +304,27 @@ select {
 
 .viewport-toolbar {
   min-width: 0;
-  padding: 8px;
+  padding: 10px;
   border: 1px solid var(--panel-border);
   background: #0f141a;
 }
 
 .viewport-toolbar-main {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
 
 .viewport-toolbar-tools {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 8px;
   min-width: 0;
-  flex: 1;
 }
 
 .viewport-tool-button,
@@ -320,12 +334,12 @@ select {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  width: 44px;
-  height: 44px;
+  width: 50px;
+  height: 50px;
   border: 1px solid var(--panel-border);
   border-radius: 0;
   background: #121923;
-  color: var(--text-secondary);
+  color: #d4dee9;
   transition:
     border-color 120ms ease,
     background 120ms ease,
@@ -343,15 +357,16 @@ select {
 .viewport-tool-group:hover,
 .viewport-tool-overflow:hover,
 .viewport-settings-button:hover:not(:disabled) {
-  border-color: #3a4654;
-  background: #171f2b;
+  border-color: #4b5c6d;
+  background: #17212c;
+  color: #eef4fb;
 }
 
 .viewport-tool-button.is-active,
 .viewport-tool-group.is-active {
   border-color: #3aa0ff;
   background: #132131;
-  color: var(--text-primary);
+  color: #f6fbff;
   box-shadow: inset 0 0 0 1px rgba(58, 160, 255, 0.18);
 }
 
@@ -370,7 +385,7 @@ select {
 
 .viewport-tool-group {
   position: relative;
-  width: 44px;
+  width: 50px;
   justify-content: center;
   overflow: hidden;
 }
@@ -396,8 +411,8 @@ select {
   position: absolute;
   right: 1px;
   bottom: 1px;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -419,8 +434,8 @@ select {
   position: absolute;
   right: 2px;
   bottom: 2px;
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   background: currentColor;
   clip-path: polygon(100% 0, 0 100%, 100% 100%);
   opacity: 0.84;
@@ -456,7 +471,7 @@ select {
 .viewport-toolbar-dropdown-tool-menu .ant-dropdown-menu {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  min-width: 180px;
+  min-width: 196px;
 }
 
 .viewport-toolbar-dropdown-image-layout .ant-dropdown-menu {
@@ -489,15 +504,15 @@ select {
   width: 100%;
   min-width: 0;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 11px 13px;
 }
 
 .viewport-tool-menu-option-icon {
-  width: 18px;
-  height: 18px;
-  font-size: 18px;
-  color: #dbe9f8;
+  width: var(--viewer-toolbar-icon-size);
+  height: var(--viewer-toolbar-icon-size);
+  font-size: var(--viewer-toolbar-icon-size);
+  color: #e8f0f8;
   flex-shrink: 0;
 }
 
@@ -611,32 +626,49 @@ select {
 }
 
 .viewport-toolbar-divider {
-  width: 1px;
-  align-self: stretch;
-  background: var(--panel-border);
+  display: none;
 }
 
 .viewport-toolbar-utilities {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .viewport-tool-button,
-.viewport-settings-button {
-  color: var(--text-primary);
+.viewport-settings-button,
+.viewport-tool-group {
+  color: #d4dee9;
+  --app-icon-accent: var(--icon-accent-muted);
 }
 
 .viewport-toolbar-icon {
   display: inline-flex;
-  width: 26px;
-  height: 26px;
+  width: var(--viewer-toolbar-icon-size);
+  height: var(--viewer-toolbar-icon-size);
   align-items: center;
   justify-content: center;
-  font-size: 26px;
+  font-size: var(--viewer-toolbar-icon-size);
   line-height: 1;
   flex-shrink: 0;
+}
+
+.viewport-tool-button:hover,
+.viewport-tool-group:hover,
+.viewport-settings-button:hover:not(:disabled) {
+  --app-icon-accent: var(--icon-accent-hover);
+}
+
+.viewport-tool-button.is-active,
+.viewport-tool-button.is-toggled,
+.viewport-tool-group.is-active {
+  --app-icon-accent: var(--icon-accent-active);
+}
+
+.viewport-tool-menu-option-icon {
+  --app-icon-accent: #5d748b;
 }
 
 .viewport-toolbar-icon::before {
@@ -663,13 +695,7 @@ select {
 }
 
 .viewport-tool-button.has-menu .viewport-toolbar-icon {
-  transform: translateX(-1px);
-}
-
-.viewport-tool-button[data-tool-id="annotationManage"] .viewport-toolbar-icon {
-  width: 22px;
-  height: 22px;
-  font-size: 22px;
+  transform: none;
 }
 
 .viewer-settings-drawer .ant-drawer-header,
@@ -858,7 +884,7 @@ select {
     color 120ms ease;
 }
 
-.annotation-list-item-delete .bootstrap-icon {
+.annotation-list-item-delete .app-icon {
   font-size: 0.92rem;
 }
 
@@ -1269,7 +1295,7 @@ select {
   padding: 0;
 }
 
-.viewer-settings-shortcut-icon-button .bootstrap-icon {
+.viewer-settings-shortcut-icon-button .app-icon {
   font-size: 0.92rem;
 }
 

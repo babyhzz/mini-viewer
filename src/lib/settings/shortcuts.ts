@@ -80,6 +80,13 @@ export const TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS: ToolbarShortcutCommandDefinit
       defaultBinding: createToolbarShortcutBinding("KeyH"),
     },
     {
+      id: "zoom",
+      categoryId: "basic",
+      label: "缩放",
+      description: "切换到缩放工具",
+      defaultBinding: createToolbarShortcutBinding("KeyZ"),
+    },
+    {
       id: "windowLevel",
       categoryId: "basic",
       label: "调窗",
@@ -169,9 +176,8 @@ const TOOLBAR_SHORTCUT_COMMAND_ID_SET = new Set<ToolbarShortcutCommandId>(
   TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.map((definition) => definition.id),
 );
 
-export const TOOLBAR_SHORTCUT_COMMAND_IDS = TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.map(
-  (definition) => definition.id,
-);
+export const TOOLBAR_SHORTCUT_COMMAND_IDS =
+  TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.map((definition) => definition.id);
 
 export function createToolbarShortcutBinding(
   code: string,
@@ -198,7 +204,9 @@ export function isToolbarShortcutToolCommand(
   ToolbarShortcutCommandId,
   "invert" | "dicomTag" | "annotationList" | "settings"
 > {
-  return !["invert", "dicomTag", "annotationList", "settings"].includes(commandId);
+  return !["invert", "dicomTag", "annotationList", "settings"].includes(
+    commandId,
+  );
 }
 
 export function getToolbarShortcutCommandDefinition(
@@ -214,10 +222,13 @@ export function createDefaultToolbarShortcutSettings(): ToolbarShortcutSettings 
     schemaVersion: 1,
     bindings: TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS.reduce<
       ToolbarShortcutSettings["bindings"]
-    >((bindings, definition) => {
-      bindings[definition.id] = definition.defaultBinding;
-      return bindings;
-    }, {} as ToolbarShortcutSettings["bindings"]),
+    >(
+      (bindings, definition) => {
+        bindings[definition.id] = definition.defaultBinding;
+        return bindings;
+      },
+      {} as ToolbarShortcutSettings["bindings"],
+    ),
   };
 }
 
@@ -261,7 +272,9 @@ function dedupeToolbarShortcutBindings(
 ) {
   const usedKeys = new Set<string>();
 
-  return TOOLBAR_SHORTCUT_COMMAND_IDS.reduce<ToolbarShortcutSettings["bindings"]>(
+  return TOOLBAR_SHORTCUT_COMMAND_IDS.reduce<
+    ToolbarShortcutSettings["bindings"]
+  >(
     (nextBindings, commandId) => {
       const binding = bindings[commandId];
 
@@ -300,13 +313,16 @@ export function normalizeToolbarShortcutSettings(
 
   const normalizedBindings = TOOLBAR_SHORTCUT_COMMAND_IDS.reduce<
     ToolbarShortcutSettings["bindings"]
-  >((nextBindings, commandId) => {
-    nextBindings[commandId] = normalizeToolbarShortcutBinding(
-      bindings?.[commandId],
-      defaults.bindings[commandId],
-    );
-    return nextBindings;
-  }, {} as ToolbarShortcutSettings["bindings"]);
+  >(
+    (nextBindings, commandId) => {
+      nextBindings[commandId] = normalizeToolbarShortcutBinding(
+        bindings?.[commandId],
+        defaults.bindings[commandId],
+      );
+      return nextBindings;
+    },
+    {} as ToolbarShortcutSettings["bindings"],
+  );
 
   return {
     schemaVersion: 1,
@@ -322,7 +338,9 @@ export function areToolbarShortcutBindingsEqual(
     return left === right;
   }
 
-  return getToolbarShortcutBindingKey(left) === getToolbarShortcutBindingKey(right);
+  return (
+    getToolbarShortcutBindingKey(left) === getToolbarShortcutBindingKey(right)
+  );
 }
 
 export function formatToolbarShortcutBinding(

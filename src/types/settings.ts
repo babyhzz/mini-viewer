@@ -1,4 +1,8 @@
-export type ViewportCorner = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
+export type ViewportCorner =
+  | "topLeft"
+  | "topRight"
+  | "bottomLeft"
+  | "bottomRight";
 
 export type OverlayTagKey =
   | "patientName"
@@ -15,6 +19,7 @@ export type OverlayTagKey =
 export type ToolbarShortcutCommandId =
   | "select"
   | "pan"
+  | "zoom"
   | "windowLevel"
   | "length"
   | "polyline"

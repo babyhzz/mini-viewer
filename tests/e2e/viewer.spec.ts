@@ -4,7 +4,7 @@ async function waitForViewerReady(page: import("@playwright/test").Page) {
   await page.goto("/");
   await expect(
     page.getByRole("heading", { name: "Series Navigator" }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("series-card").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -19,37 +19,35 @@ async function toggleSequenceSync(
   page: import("@playwright/test").Page,
   syncType: "sameStudy" | "crossStudy",
 ) {
-  const sequenceSyncButton = page.getByTestId("viewport-sequence-sync-button");
-
-  if (await sequenceSyncButton.count()) {
-    await sequenceSyncButton.click();
-    await page.getByTestId(`viewport-sequence-sync-option-${syncType}`).click();
-    return;
-  }
-
-  await page.getByTestId("viewport-tool-overflow").click();
-  await page
-    .getByTestId(
-      `viewport-tool-overflow-option-sequenceSync-toggle${
-        syncType === "sameStudy" ? "SameStudy" : "CrossStudy"
-      }`,
-    )
-    .click();
+  await page.getByTestId("viewport-sequence-sync-button").click();
+  await page.getByTestId(`viewport-sequence-sync-option-${syncType}`).click();
 }
 
 async function clearSequenceSync(page: import("@playwright/test").Page) {
-  const sequenceSyncButton = page.getByTestId("viewport-sequence-sync-button");
+  await page.getByTestId("viewport-sequence-sync-button").click();
+  await page.getByTestId("viewport-sequence-sync-option-clear").click();
+}
 
-  if (await sequenceSyncButton.count()) {
-    await sequenceSyncButton.click();
-    await page.getByTestId("viewport-sequence-sync-option-clear").click();
-    return;
-  }
+async function selectToolbarTool(
+  page: import("@playwright/test").Page,
+  toolId: string,
+) {
+  await page.getByTestId(`viewport-tool-${toolId}`).click();
+}
 
-  await page.getByTestId("viewport-tool-overflow").click();
-  await page
-    .getByTestId("viewport-tool-overflow-option-sequenceSync-clear")
-    .click();
+async function selectWindowPreset(
+  page: import("@playwright/test").Page,
+  presetId: string,
+) {
+  await page.getByTestId("viewport-window-preset-button").click();
+  await page.getByTestId(`viewport-window-preset-option-${presetId}`).click();
+}
+
+async function runViewAction(
+  page: import("@playwright/test").Page,
+  actionId: "fit" | "reset" | "rotateRight" | "flipHorizontal" | "flipVertical",
+) {
+  await page.getByTestId(`viewport-view-action-${actionId}`).click();
 }
 
 async function scrollViewportFrames(
@@ -106,12 +104,16 @@ test.describe("DICOM viewer smoke coverage", () => {
       payload.studies[0].series[0].seriesId,
     );
     expect(payload.studies[0].series[0].images.length).toBeGreaterThan(0);
-    expect(payload.studies[0].series[0].images[0].dicomUrl).toContain("/api/dicom");
+    expect(payload.studies[0].series[0].images[0].dicomUrl).toContain(
+      "/api/dicom",
+    );
 
     const sortableSeries = payload.studies
       .flatMap((study) => study.series)
-      .find((series) =>
-        series.images.filter((image) => image.instanceNumber != null).length >= 2,
+      .find(
+        (series) =>
+          series.images.filter((image) => image.instanceNumber != null)
+            .length >= 2,
       );
 
     expect(sortableSeries).toBeTruthy();
@@ -152,8 +154,12 @@ test.describe("DICOM viewer smoke coverage", () => {
     expect(payload.viewportOverlay.schemaVersion).toBe(1);
     expect(payload.viewportOverlay.corners.topLeft.length).toBeGreaterThan(0);
     expect(payload.viewportOverlay.corners.topRight.length).toBeGreaterThan(0);
-    expect(payload.viewportOverlay.corners.bottomLeft.length).toBeGreaterThan(0);
-    expect(payload.viewportOverlay.corners.bottomRight.length).toBeGreaterThan(0);
+    expect(payload.viewportOverlay.corners.bottomLeft.length).toBeGreaterThan(
+      0,
+    );
+    expect(payload.viewportOverlay.corners.bottomRight.length).toBeGreaterThan(
+      0,
+    );
     expect(payload.toolbarShortcuts.schemaVersion).toBe(1);
     expect(payload.toolbarShortcuts.bindings).toHaveProperty("select");
     expect(payload.toolbarShortcuts.bindings.dicomTag?.code).toBe("F2");
@@ -226,47 +232,53 @@ test.describe("DICOM viewer smoke coverage", () => {
       "aria-pressed",
       "true",
     );
-    await expect(page.getByTestId("viewport-image-layout-button")).toBeVisible();
-    await expect(page.getByTestId("viewport-mpr-layout-button")).toBeVisible();
-    const sequenceSyncButton = page.getByTestId("viewport-sequence-sync-button");
-
-    if (await sequenceSyncButton.count()) {
-      await expect(sequenceSyncButton).toBeVisible();
-    } else {
-      await expect(page.getByTestId("viewport-tool-overflow")).toBeVisible();
-    }
+    await expect(page.getByTestId("viewport-tool-zoom")).toBeVisible();
     await expect(
-      page.getByTestId("viewport-tool-group-measure"),
+      page.getByTestId("viewport-window-preset-button"),
     ).toBeVisible();
-    const roiGroup = page.getByTestId("viewport-tool-group-roi");
-
-    if (await roiGroup.count()) {
-      await expect(roiGroup).toBeVisible();
-    } else {
-      await expect(page.getByTestId("viewport-tool-overflow")).toBeVisible();
-    }
-    const invertButton = page.getByTestId("viewport-tool-invert");
-
-    if (await invertButton.count()) {
-      await expect(invertButton).toHaveAttribute("aria-pressed", "false");
-    } else {
-      await expect(page.getByTestId("viewport-tool-overflow")).toBeVisible();
-    }
+    await expect(page.getByTestId("viewport-view-action-fit")).toBeVisible();
+    await expect(page.getByTestId("viewport-view-action-reset")).toBeVisible();
+    await expect(
+      page.getByTestId("viewport-view-action-rotateRight"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("viewport-image-layout-button"),
+    ).toBeVisible();
+    await expect(page.getByTestId("viewport-mpr-layout-button")).toBeVisible();
+    await expect(
+      page.getByTestId("viewport-sequence-sync-button"),
+    ).toBeVisible();
+    await expect(page.getByTestId("viewport-tool-group-measure")).toBeVisible();
+    await expect(page.getByTestId("viewport-tool-group-roi")).toBeVisible();
+    await expect(page.getByTestId("viewport-tool-invert")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     await expect(
       page.getByTestId("viewport-annotation-manage-button"),
     ).toBeVisible();
-    await expect(page.getByTestId("viewport-annotation-list-button")).toBeVisible();
+    await expect(
+      page.getByTestId("viewport-annotation-list-button"),
+    ).toBeVisible();
     await expect(page.getByTestId("viewport-settings-button")).toBeVisible();
     await expect(page.getByTestId("viewport-overlay-top-left")).toBeVisible();
     await expect(page.getByTestId("viewport-overlay-top-right")).toBeVisible();
-    await expect(page.getByTestId("viewport-overlay-bottom-left")).toBeVisible();
+    await expect(
+      page.getByTestId("viewport-overlay-bottom-left"),
+    ).toBeVisible();
     await expect(page.getByTestId("viewport-scrollbar")).toBeVisible();
     await expect(frameIndicator).toContainText(`[1]/[${firstImageCount}]`);
     await expect(page.getByText("主视图加载失败")).toHaveCount(0);
     await expect(viewportStage).toHaveAttribute("data-active-tool", "select");
     await expect(viewportStage).toHaveAttribute("data-invert-enabled", "false");
-    await expect(viewportStage).toHaveAttribute("data-viewport-selected", "true");
-    await expect(viewportStage).toHaveAttribute("data-sequence-sync-state", "off");
+    await expect(viewportStage).toHaveAttribute(
+      "data-viewport-selected",
+      "true",
+    );
+    await expect(viewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "off",
+    );
     await expect(page.getByTestId("viewport-scrollbar")).toHaveAttribute(
       "data-single-frame",
       String(firstImageCount === 1),
@@ -321,9 +333,7 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(
       page.getByRole("button", { name: "快捷键", exact: true }),
     ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "四角信息" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "四角信息" })).toBeVisible();
     await expect(page.getByText("左上角")).toBeVisible();
     await expect(page.getByText("右下角")).toBeVisible();
     await expect(page.getByRole("button", { name: "保存设置" })).toBeVisible();
@@ -332,7 +342,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(
       page.getByTestId("viewer-settings-shortcuts-section"),
     ).toBeVisible();
-    await expect(page.getByTestId("viewer-settings-shortcut-filter")).toBeVisible();
+    await expect(
+      page.getByTestId("viewer-settings-shortcut-filter"),
+    ).toBeVisible();
     await expect(
       page.getByTestId("viewer-settings-shortcut-group-basic"),
     ).toBeVisible();
@@ -346,12 +358,17 @@ test.describe("DICOM viewer smoke coverage", () => {
     await page.getByTestId("viewer-settings-editor-done").click();
     await expect(page.getByText("编辑左上角信息项")).toHaveCount(0);
 
-    const panShortcutButton = page.getByTestId("viewer-settings-shortcut-record-pan");
+    const panShortcutButton = page.getByTestId(
+      "viewer-settings-shortcut-record-pan",
+    );
     await panShortcutButton.click();
     await expect(page.getByText("正在录制 平移")).toBeVisible();
     await page.keyboard.press("Shift+K");
     await expect(panShortcutButton).toContainText("Shift + K");
-    await page.getByTestId("viewer-settings-shortcut-filter").getByText(/已修改/).click();
+    await page
+      .getByTestId("viewer-settings-shortcut-filter")
+      .getByText(/已修改/)
+      .click();
     await expect(panShortcutButton).toBeVisible();
 
     const closeButton = page
@@ -377,14 +394,13 @@ test.describe("DICOM viewer smoke coverage", () => {
         schemaVersion: number;
         bindings: Record<
           string,
-          | {
-              code: string;
-              ctrlKey: boolean;
-              altKey: boolean;
-              shiftKey: boolean;
-              metaKey: boolean;
-            }
-          | null
+          {
+            code: string;
+            ctrlKey: boolean;
+            altKey: boolean;
+            shiftKey: boolean;
+            metaKey: boolean;
+          } | null
         >;
       };
     };
@@ -514,10 +530,16 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(page.getByTestId("dicom-tag-count")).toHaveCount(0);
 
     const patientNameRow = page.locator("tr", { hasText: "Patient Name" });
-    const sequenceRow = page.locator("tr", { hasText: "Source Image Sequence" });
+    const sequenceRow = page.locator("tr", {
+      hasText: "Source Image Sequence",
+    });
 
-    await expect(patientNameRow.locator(".ant-table-row-expand-icon")).toHaveCount(0);
-    await expect(sequenceRow.locator(".ant-table-row-expand-icon")).toHaveCount(1);
+    await expect(
+      patientNameRow.locator(".ant-table-row-expand-icon"),
+    ).toHaveCount(0);
+    await expect(sequenceRow.locator(".ant-table-row-expand-icon")).toHaveCount(
+      1,
+    );
 
     const searchInput = page.getByPlaceholder("搜索 Tag 编号、名称或关键字");
 
@@ -576,10 +598,9 @@ test.describe("DICOM viewer smoke coverage", () => {
       "viewport-3",
       "viewport-4",
     ]) {
-      await expect(page.getByTestId(`viewport-slot-${viewportId}`)).not.toHaveAttribute(
-        "data-series-title",
-        "",
-      );
+      await expect(
+        page.getByTestId(`viewport-slot-${viewportId}`),
+      ).not.toHaveAttribute("data-series-title", "");
     }
 
     expect(secondViewportTitle).toBeTruthy();
@@ -609,7 +630,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     ).toEqual([]);
   });
 
-  test("same-study stack viewports sync by slice position", async ({ page }) => {
+  test("same-study stack viewports sync by slice position", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await waitForViewerReady(page);
 
@@ -667,8 +690,12 @@ test.describe("DICOM viewer smoke coverage", () => {
     });
     await page.mouse.wheel(0, 640);
 
-    await expect(firstViewportStage).not.toHaveAttribute("data-frame-index", "1");
-    const syncedFrameIndex = await firstViewportStage.getAttribute("data-frame-index");
+    await expect(firstViewportStage).not.toHaveAttribute(
+      "data-frame-index",
+      "1",
+    );
+    const syncedFrameIndex =
+      await firstViewportStage.getAttribute("data-frame-index");
 
     await expect(secondViewportStage).toHaveAttribute(
       "data-frame-index",
@@ -676,7 +703,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     );
   });
 
-  test("cross-study stack viewports sync after calibration", async ({ page }) => {
+  test("cross-study stack viewports sync after calibration", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await waitForViewerReady(page);
 
@@ -703,10 +732,16 @@ test.describe("DICOM viewer smoke coverage", () => {
     });
 
     await scrollViewportFrames(page, firstViewportStage, 960, 18);
-    await expect(firstViewportStage).not.toHaveAttribute("data-frame-index", "1");
+    await expect(firstViewportStage).not.toHaveAttribute(
+      "data-frame-index",
+      "1",
+    );
 
     await scrollViewportFrames(page, secondViewportStage, 960, 3);
-    await expect(secondViewportStage).not.toHaveAttribute("data-frame-index", "1");
+    await expect(secondViewportStage).not.toHaveAttribute(
+      "data-frame-index",
+      "1",
+    );
 
     await firstViewportStage.click({
       position: {
@@ -800,7 +835,9 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     await expect(viewportGrid).toHaveAttribute("data-layout-id", "2x2");
     await expect(viewportGrid).toHaveAttribute("data-layout-count", "4");
-    await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(4);
+    await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(
+      4,
+    );
 
     await secondViewportStage.dblclick({
       position: {
@@ -815,7 +852,9 @@ test.describe("DICOM viewer smoke coverage", () => {
       "data-maximized-viewport-id",
       "viewport-2",
     );
-    await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(
+      1,
+    );
     await expect(page.getByTestId("viewport-slot-viewport-2")).toHaveAttribute(
       "data-viewport-maximized",
       "true",
@@ -830,8 +869,13 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     await expect(viewportGrid).toHaveAttribute("data-layout-id", "2x2");
     await expect(viewportGrid).toHaveAttribute("data-layout-count", "4");
-    await expect(viewportGrid).toHaveAttribute("data-maximized-viewport-id", "");
-    await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(4);
+    await expect(viewportGrid).toHaveAttribute(
+      "data-maximized-viewport-id",
+      "",
+    );
+    await expect(page.locator('[data-testid^="viewport-slot-"]')).toHaveCount(
+      4,
+    );
   });
 
   test("selected viewports can switch into independent MPR layouts", async ({
@@ -846,14 +890,19 @@ test.describe("DICOM viewer smoke coverage", () => {
     const firstViewportSlot = page.getByTestId("viewport-slot-viewport-1");
     const firstViewportStage = firstViewportSlot.getByTestId("viewport-stage");
     const secondViewportSlot = page.getByTestId("viewport-slot-viewport-2");
-    const secondViewportStage = secondViewportSlot.getByTestId("viewport-stage");
+    const secondViewportStage =
+      secondViewportSlot.getByTestId("viewport-stage");
 
     await page.getByTestId("viewport-mpr-layout-button").click();
     await page.getByTestId("viewport-mpr-layout-option-left1Right2").click();
 
-    await expect(firstViewportStage).toHaveAttribute("data-status", /ready|error/, {
-      timeout: 60_000,
-    });
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-status",
+      /ready|error/,
+      {
+        timeout: 60_000,
+      },
+    );
     await expect(firstViewportStage).toHaveAttribute("data-view-mode", "mpr");
     await expect(firstViewportStage).toHaveAttribute(
       "data-mpr-layout-id",
@@ -865,9 +914,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     );
     await expect(firstViewportSlot.getByTestId("mpr-pane")).toHaveCount(3);
     if ((await firstViewportStage.getAttribute("data-status")) === "ready") {
-      await expect(firstViewportSlot.getByTestId("mpr-pane-scrollbar")).toHaveCount(
-        3,
-      );
+      await expect(
+        firstViewportSlot.getByTestId("mpr-pane-scrollbar"),
+      ).toHaveCount(3);
     }
 
     await secondViewportStage.click({
@@ -888,7 +937,7 @@ test.describe("DICOM viewer smoke coverage", () => {
       "data-status",
       /ready|error/,
       {
-      timeout: 60_000,
+        timeout: 60_000,
       },
     );
     await expect(secondViewportStage).toHaveAttribute("data-view-mode", "mpr");
@@ -902,9 +951,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     );
     await expect(secondViewportSlot.getByTestId("mpr-pane")).toHaveCount(3);
     if ((await secondViewportStage.getAttribute("data-status")) === "ready") {
-      await expect(secondViewportSlot.getByTestId("mpr-pane-scrollbar")).toHaveCount(
-        3,
-      );
+      await expect(
+        secondViewportSlot.getByTestId("mpr-pane-scrollbar"),
+      ).toHaveCount(3);
     }
     await expect(firstViewportStage).toHaveAttribute(
       "data-mpr-layout-id",
@@ -914,7 +963,10 @@ test.describe("DICOM viewer smoke coverage", () => {
     await page.getByTestId("viewport-mpr-layout-button").click();
     await page.getByTestId("viewport-mpr-layout-option-off").click();
 
-    await expect(secondViewportStage).toHaveAttribute("data-view-mode", "stack");
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-view-mode",
+      "stack",
+    );
     await expect(secondViewportSlot.getByTestId("mpr-pane")).toHaveCount(0);
     await expect(firstViewportStage).toHaveAttribute("data-view-mode", "mpr");
     await expect(firstViewportSlot.getByTestId("mpr-pane")).toHaveCount(3);
@@ -928,7 +980,9 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     const viewportStage = page.getByTestId("viewport-stage");
     const imageLayoutCells = page.getByTestId("viewport-image-layout-cell");
-    const firstImageLayoutCanvas = page.getByTestId("viewport-image-layout-canvas").first();
+    const firstImageLayoutCanvas = page
+      .getByTestId("viewport-image-layout-canvas")
+      .first();
     const frameCount = Number(
       (await viewportStage.getAttribute("data-frame-count")) ?? "0",
     );
@@ -942,20 +996,27 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(viewportStage).toHaveAttribute("data-cell-selection", "all");
     await expect(page.getByTestId("viewport-image-layout-grid")).toBeVisible();
     await expect(imageLayoutCells).toHaveCount(4);
-    await expect(viewportStage).toHaveAttribute("data-image-layout-start-frame", "1");
+    await expect(viewportStage).toHaveAttribute(
+      "data-image-layout-start-frame",
+      "1",
+    );
     await expect(viewportStage).toHaveAttribute(
       "data-image-layout-end-frame",
       String(visibleCellCount),
     );
     await expect(page.getByTestId("viewport-frame-indicator")).toHaveCount(0);
-    await expect(page.getByTestId("viewport-image-layout-cell-frame-indicator")).toHaveCount(
-      visibleCellCount,
-    );
     await expect(
-      imageLayoutCells.first().getByTestId("viewport-image-layout-cell-overlay-top-left"),
+      page.getByTestId("viewport-image-layout-cell-frame-indicator"),
+    ).toHaveCount(visibleCellCount);
+    await expect(
+      imageLayoutCells
+        .first()
+        .getByTestId("viewport-image-layout-cell-overlay-top-left"),
     ).toBeVisible();
     await expect(
-      imageLayoutCells.first().getByTestId("viewport-image-layout-cell-frame-indicator"),
+      imageLayoutCells
+        .first()
+        .getByTestId("viewport-image-layout-cell-frame-indicator"),
     ).toContainText(`[1]/[${frameCount}]`);
     await expect(firstImageLayoutCanvas).toHaveAttribute(
       "data-source-width",
@@ -969,9 +1030,10 @@ test.describe("DICOM viewer smoke coverage", () => {
     const firstCanvasAspectMetrics = await firstImageLayoutCanvas.evaluate(
       (canvas) => {
         const rect = canvas.getBoundingClientRect();
-        const cellRect =
-          canvas.parentElement?.getBoundingClientRect() ?? rect;
-        const sourceWidth = Number(canvas.getAttribute("data-source-width") ?? "0");
+        const cellRect = canvas.parentElement?.getBoundingClientRect() ?? rect;
+        const sourceWidth = Number(
+          canvas.getAttribute("data-source-width") ?? "0",
+        );
         const sourceHeight = Number(
           canvas.getAttribute("data-source-height") ?? "0",
         );
@@ -1012,14 +1074,20 @@ test.describe("DICOM viewer smoke coverage", () => {
 
       await expect(viewportStage).toHaveAttribute("data-cell-selection", "1");
       await expect(
-        page.locator('[data-testid="viewport-image-layout-cell"][data-cell-index="0"]'),
+        page.locator(
+          '[data-testid="viewport-image-layout-cell"][data-cell-index="0"]',
+        ),
       ).toHaveAttribute("data-cell-selected", "false");
       await expect(
-        page.locator('[data-testid="viewport-image-layout-cell"][data-cell-index="1"]'),
+        page.locator(
+          '[data-testid="viewport-image-layout-cell"][data-cell-index="1"]',
+        ),
       ).toHaveAttribute("data-cell-selected", "true");
       await expect(
         page
-          .locator('[data-testid="viewport-image-layout-cell"][data-cell-index="1"]')
+          .locator(
+            '[data-testid="viewport-image-layout-cell"][data-cell-index="1"]',
+          )
           .getByTestId("viewport-image-layout-cell-frame-indicator"),
       ).toContainText(`[2]/[${frameCount}]`);
     }
@@ -1034,19 +1102,21 @@ test.describe("DICOM viewer smoke coverage", () => {
       await page.mouse.wheel(0, 320);
 
       const nextStartFrame = Number(
-        (await viewportStage.getAttribute("data-image-layout-start-frame")) ?? "0",
+        (await viewportStage.getAttribute("data-image-layout-start-frame")) ??
+          "0",
       );
       const nextEndFrame = Number(
-        (await viewportStage.getAttribute("data-image-layout-end-frame")) ?? "0",
+        (await viewportStage.getAttribute("data-image-layout-end-frame")) ??
+          "0",
       );
 
       expect(nextStartFrame).toBeGreaterThan(1);
       expect(nextEndFrame).toBeGreaterThan(nextStartFrame);
       await expect(
-        imageLayoutCells.first().getByTestId("viewport-image-layout-cell-frame-indicator"),
-      ).toContainText(
-        `[${nextStartFrame}]/[${frameCount}]`,
-      );
+        imageLayoutCells
+          .first()
+          .getByTestId("viewport-image-layout-cell-frame-indicator"),
+      ).toContainText(`[${nextStartFrame}]/[${frameCount}]`);
 
       const scrollTopAfter = await page.evaluate(
         () => document.scrollingElement?.scrollTop ?? 0,
@@ -1081,7 +1151,10 @@ test.describe("DICOM viewer smoke coverage", () => {
       "true",
     );
     await expect(viewportStage).toHaveAttribute("data-active-tool", "select");
-    await expect(viewportStage).toHaveAttribute("data-viewport-selected", "true");
+    await expect(viewportStage).toHaveAttribute(
+      "data-viewport-selected",
+      "true",
+    );
     await expect(viewportStage).toHaveAttribute(
       "data-select-scroll-active",
       "false",
@@ -1166,7 +1239,10 @@ test.describe("DICOM viewer smoke coverage", () => {
     expect(initialWindowCenter).not.toBe("na");
 
     await windowLevelButton.click();
-    await expect(viewportStage).toHaveAttribute("data-active-tool", "windowLevel");
+    await expect(viewportStage).toHaveAttribute(
+      "data-active-tool",
+      "windowLevel",
+    );
 
     const startX = stageBox!.x + stageBox!.width * 0.42;
     const startY = stageBox!.y + stageBox!.height * 0.42;
@@ -1184,7 +1260,114 @@ test.describe("DICOM viewer smoke coverage", () => {
       "data-voi-window-center",
       initialWindowCenter,
     );
-    await expect(viewportStage).toHaveAttribute("data-frame-index", initialFrameIndex);
+    await expect(viewportStage).toHaveAttribute(
+      "data-frame-index",
+      initialFrameIndex,
+    );
+  });
+
+  test("zoom tool changes zoom and fit restores the initial framing", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await waitForViewerReady(page);
+
+    const viewportStage = page.getByTestId("viewport-stage");
+    const stageBox = await viewportStage.boundingBox();
+    const initialZoom =
+      (await viewportStage.getAttribute("data-view-zoom")) ?? "";
+
+    expect(stageBox).not.toBeNull();
+    expect(initialZoom).not.toBe("na");
+
+    await selectToolbarTool(page, "zoom");
+    await expect(viewportStage).toHaveAttribute("data-active-tool", "zoom");
+
+    const startX = stageBox!.x + stageBox!.width * 0.52;
+    const startY = stageBox!.y + stageBox!.height * 0.52;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX, startY - 140, { steps: 12 });
+    await page.mouse.up();
+
+    await expect(viewportStage).not.toHaveAttribute(
+      "data-view-zoom",
+      initialZoom,
+    );
+
+    await selectToolbarTool(page, "pan");
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 84, startY + 60, { steps: 10 });
+    await page.mouse.up();
+
+    await expect(viewportStage).not.toHaveAttribute(
+      "data-pan-offset",
+      "0.00,0.00,0.00",
+    );
+
+    await runViewAction(page, "fit");
+
+    await expect(viewportStage).toHaveAttribute(
+      "data-pan-offset",
+      "0.00,0.00,0.00",
+    );
+    await expect(viewportStage).toHaveAttribute("data-view-zoom", initialZoom);
+  });
+
+  test("window presets and view operations update the viewport presentation", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await waitForViewerReady(page);
+
+    const viewportStage = page.getByTestId("viewport-stage");
+    const initialWindowWidth =
+      (await viewportStage.getAttribute("data-voi-window-width")) ?? "";
+    const initialWindowCenter =
+      (await viewportStage.getAttribute("data-voi-window-center")) ?? "";
+
+    expect(initialWindowWidth).not.toBe("na");
+    expect(initialWindowCenter).not.toBe("na");
+
+    await selectWindowPreset(page, "bone");
+
+    await expect(viewportStage).toHaveAttribute(
+      "data-voi-window-width",
+      "2000.00",
+    );
+    await expect(viewportStage).toHaveAttribute(
+      "data-voi-window-center",
+      "350.00",
+    );
+
+    await runViewAction(page, "reset");
+
+    await expect(viewportStage).toHaveAttribute(
+      "data-voi-window-width",
+      initialWindowWidth,
+    );
+    await expect(viewportStage).toHaveAttribute(
+      "data-voi-window-center",
+      initialWindowCenter,
+    );
+
+    await runViewAction(page, "rotateRight");
+
+    await expect(viewportStage).toHaveAttribute("data-view-rotation", "90");
+
+    await runViewAction(page, "reset");
+
+    await expect(viewportStage).toHaveAttribute("data-view-rotation", "0");
+    await expect(viewportStage).toHaveAttribute(
+      "data-voi-window-width",
+      initialWindowWidth,
+    );
+    await expect(viewportStage).toHaveAttribute(
+      "data-voi-window-center",
+      initialWindowCenter,
+    );
   });
 
   test("invert acts as an immediate action without replacing the active tool", async ({
@@ -1262,7 +1445,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(viewportStage).toHaveAttribute("data-active-tool", "angle");
 
     await measureMenuTrigger.click();
-    await page.getByTestId("viewport-tool-group-measure-option-polyline").click();
+    await page
+      .getByTestId("viewport-tool-group-measure-option-polyline")
+      .click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "polyline");
     await expect(viewportStage).toHaveAttribute(
       "data-active-annotation-count",
@@ -1287,11 +1472,15 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(viewportStage).toHaveAttribute("data-annotation-total", "2");
 
     await measureMenuTrigger.click();
-    await page.getByTestId("viewport-tool-group-measure-option-freehand").click();
+    await page
+      .getByTestId("viewport-tool-group-measure-option-freehand")
+      .click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "freehand");
   });
 
-  test("polyline text box drag keeps the annotation intact", async ({ page }) => {
+  test("polyline text box drag keeps the annotation intact", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await waitForViewerReady(page);
 
@@ -1304,7 +1493,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     expect(stageBox).not.toBeNull();
 
     await measureMenuTrigger.click();
-    await page.getByTestId("viewport-tool-group-measure-option-polyline").click();
+    await page
+      .getByTestId("viewport-tool-group-measure-option-polyline")
+      .click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "polyline");
 
     const startX = stageBox!.x + stageBox!.width * 0.28;
@@ -1396,11 +1587,17 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     await roiMenuTrigger.click();
     await page.getByTestId("viewport-tool-group-roi-option-ellipseRoi").click();
-    await expect(viewportStage).toHaveAttribute("data-active-tool", "ellipseRoi");
+    await expect(viewportStage).toHaveAttribute(
+      "data-active-tool",
+      "ellipseRoi",
+    );
 
     await roiMenuTrigger.click();
     await page.getByTestId("viewport-tool-group-roi-option-circleRoi").click();
-    await expect(viewportStage).toHaveAttribute("data-active-tool", "circleRoi");
+    await expect(viewportStage).toHaveAttribute(
+      "data-active-tool",
+      "circleRoi",
+    );
   });
 
   test("annotation manager and list support selection, deletion, and clear-all", async ({
@@ -1434,7 +1631,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     await page.mouse.up();
 
     await measureMenuTrigger.click();
-    await page.getByTestId("viewport-tool-group-measure-option-polyline").click();
+    await page
+      .getByTestId("viewport-tool-group-measure-option-polyline")
+      .click();
     await expect(viewportStage).toHaveAttribute("data-active-tool", "polyline");
 
     const polylineStartX = stageBox!.x + stageBox!.width * 0.26;
@@ -1487,9 +1686,7 @@ test.describe("DICOM viewer smoke coverage", () => {
     await clearAllDialog.getByRole("button", { name: "清空全部" }).click();
 
     await expect(viewportStage).toHaveAttribute("data-annotation-total", "0");
-    await expect(
-      page.getByTestId("annotation-list-empty"),
-    ).toBeVisible();
+    await expect(page.getByTestId("annotation-list-empty")).toBeVisible();
   });
 
   test("desktop layout keeps both panels fully visible without page clipping", async ({
@@ -1501,7 +1698,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     const metrics = await page.evaluate(() => {
       const shell = document.querySelector('[data-testid="viewer-shell"]');
       const sidebar = document.querySelector('[data-testid="sidebar-panel"]');
-      const viewportPanel = document.querySelector('[data-testid="viewport-panel"]');
+      const viewportPanel = document.querySelector(
+        '[data-testid="viewport-panel"]',
+      );
 
       function box(element: Element | null) {
         if (!element) {
@@ -1539,12 +1738,18 @@ test.describe("DICOM viewer smoke coverage", () => {
     expect(metrics.shell!.right).toBeLessThanOrEqual(metrics.innerWidth);
     expect(metrics.shell!.bottom).toBeLessThanOrEqual(metrics.innerHeight);
     expect(metrics.sidebar!.bottom).toBeLessThanOrEqual(metrics.innerHeight);
-    expect(metrics.viewportPanel!.bottom).toBeLessThanOrEqual(metrics.innerHeight);
-    expect(metrics.viewportPanel!.right).toBeLessThanOrEqual(metrics.innerWidth);
+    expect(metrics.viewportPanel!.bottom).toBeLessThanOrEqual(
+      metrics.innerHeight,
+    );
+    expect(metrics.viewportPanel!.right).toBeLessThanOrEqual(
+      metrics.innerWidth,
+    );
     expect(metrics.shell!.top).toBeLessThanOrEqual(1);
     expect(metrics.shell!.left).toBeLessThanOrEqual(1);
     expect(metrics.shell!.right).toBeGreaterThanOrEqual(metrics.innerWidth - 1);
-    expect(metrics.shell!.bottom).toBeGreaterThanOrEqual(metrics.innerHeight - 1);
+    expect(metrics.shell!.bottom).toBeGreaterThanOrEqual(
+      metrics.innerHeight - 1,
+    );
   });
 
   test("13-inch mac layout stays dense and flat", async ({ page }) => {
@@ -1553,7 +1758,9 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     const metrics = await page.evaluate(() => {
       const sidebar = document.querySelector('[data-testid="sidebar-panel"]');
-      const viewportPanel = document.querySelector('[data-testid="viewport-panel"]');
+      const viewportPanel = document.querySelector(
+        '[data-testid="viewport-panel"]',
+      );
       const firstCard = document.querySelector('[data-testid="series-card"]');
       const thumb = document.querySelector(".thumbnail-frame");
 
@@ -1609,14 +1816,18 @@ test.describe("DICOM viewer smoke coverage", () => {
     expect(metrics.thumb!.height).toBeLessThanOrEqual(74);
     expect(metrics.firstCard!.height).toBeLessThanOrEqual(110);
     expect(metrics.sidebar!.bottom).toBeLessThanOrEqual(metrics.innerHeight);
-    expect(metrics.viewportPanel!.bottom).toBeLessThanOrEqual(metrics.innerHeight);
+    expect(metrics.viewportPanel!.bottom).toBeLessThanOrEqual(
+      metrics.innerHeight,
+    );
     expect(metrics.sidebarStyles?.borderRadius).toBe("0px");
     expect(metrics.viewportStyles?.borderRadius).toBe("0px");
     expect(metrics.sidebarStyles?.boxShadow).toBe("none");
     expect(metrics.viewportStyles?.boxShadow).toBe("none");
   });
 
-  test("viewport responds to resize without losing readiness", async ({ page }) => {
+  test("viewport responds to resize without losing readiness", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await waitForViewerReady(page);
 
@@ -1641,7 +1852,9 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     const metrics = await page.evaluate(() => {
       const sidebar = document.querySelector('[data-testid="sidebar-panel"]');
-      const viewportPanel = document.querySelector('[data-testid="viewport-panel"]');
+      const viewportPanel = document.querySelector(
+        '[data-testid="viewport-panel"]',
+      );
 
       function box(element: Element | null) {
         if (!element) {
@@ -1672,8 +1885,12 @@ test.describe("DICOM viewer smoke coverage", () => {
     expect(metrics.viewportPanel).not.toBeNull();
     expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.innerWidth + 1);
     expect(metrics.sidebar!.width).toBeLessThanOrEqual(metrics.innerWidth);
-    expect(metrics.viewportPanel!.width).toBeLessThanOrEqual(metrics.innerWidth);
-    expect(metrics.viewportPanel!.top).toBeGreaterThan(metrics.sidebar!.bottom - 1);
+    expect(metrics.viewportPanel!.width).toBeLessThanOrEqual(
+      metrics.innerWidth,
+    );
+    expect(metrics.viewportPanel!.top).toBeGreaterThan(
+      metrics.sidebar!.bottom - 1,
+    );
 
     await page.getByTestId("viewport-panel").scrollIntoViewIfNeeded();
     await expect(page.getByTestId("viewport-stage")).toBeVisible();

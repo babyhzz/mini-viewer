@@ -153,7 +153,10 @@ function getCachedMeasurementSummary(annotation: CornerstoneAnnotationLike) {
     return lengthSummary;
   }
 
-  if (typeof firstEntry.angle === "number" && Number.isFinite(firstEntry.angle)) {
+  if (
+    typeof firstEntry.angle === "number" &&
+    Number.isFinite(firstEntry.angle)
+  ) {
     return `${formatNumber(firstEntry.angle)}°`;
   }
 
@@ -189,7 +192,10 @@ function getCachedMeasurementSummary(annotation: CornerstoneAnnotationLike) {
   );
 
   if (firstStat) {
-    const valueSummary = formatMeasurementValue(firstStat.value, firstStat.unit);
+    const valueSummary = formatMeasurementValue(
+      firstStat.value,
+      firstStat.unit,
+    );
 
     if (valueSummary) {
       return valueSummary;
@@ -253,11 +259,14 @@ export function registerCornerstoneViewportTools(
   tools: typeof import("@cornerstonejs/tools"),
   registrationState: Set<string>,
 ) {
-  const PolylineMeasureTool =
-    createPolylineMeasureTool(core, tools) as PolylineMeasureToolClass;
+  const PolylineMeasureTool = createPolylineMeasureTool(
+    core,
+    tools,
+  ) as PolylineMeasureToolClass;
   const toolClasses = [
     tools.StackScrollTool,
     tools.PanTool,
+    tools.ZoomTool,
     tools.WindowLevelTool,
     tools.CrosshairsTool,
     tools.LengthTool,
@@ -288,6 +297,7 @@ export function configureViewportToolGroup(
 ) {
   toolGroup.addTool(tools.StackScrollTool.toolName);
   toolGroup.addTool(tools.PanTool.toolName);
+  toolGroup.addTool(tools.ZoomTool.toolName);
   toolGroup.addTool(tools.WindowLevelTool.toolName);
   toolGroup.addTool(tools.LengthTool.toolName);
   toolGroup.addTool(tools.AngleTool.toolName);
@@ -318,6 +328,7 @@ export function configureMprViewportToolGroup(
   crosshairsConfiguration: Record<string, unknown>,
 ) {
   toolGroup.addTool(tools.PanTool.toolName);
+  toolGroup.addTool(tools.ZoomTool.toolName);
   toolGroup.addTool(tools.WindowLevelTool.toolName);
   toolGroup.addTool(MPR_CROSSHAIRS_TOOL_NAME, crosshairsConfiguration);
 }
@@ -369,6 +380,7 @@ export function applyActiveMprViewportTool(
   for (const toolName of [
     MPR_CROSSHAIRS_TOOL_NAME,
     tools.PanTool.toolName,
+    tools.ZoomTool.toolName,
     tools.WindowLevelTool.toolName,
   ]) {
     toolGroup.setToolPassive(toolName, {
@@ -379,9 +391,11 @@ export function applyActiveMprViewportTool(
   const nextActiveToolName =
     activeTool === "pan"
       ? tools.PanTool.toolName
-      : activeTool === "windowLevel"
-        ? tools.WindowLevelTool.toolName
-        : MPR_CROSSHAIRS_TOOL_NAME;
+      : activeTool === "zoom"
+        ? tools.ZoomTool.toolName
+        : activeTool === "windowLevel"
+          ? tools.WindowLevelTool.toolName
+          : MPR_CROSSHAIRS_TOOL_NAME;
 
   toolGroup.setToolActive(nextActiveToolName, {
     bindings: [
@@ -441,7 +455,10 @@ export function getViewportAnnotationEntries(
         continue;
       }
 
-      const frameIndex = getAnnotationFrameIndex(annotation, imageIdToFrameIndex);
+      const frameIndex = getAnnotationFrameIndex(
+        annotation,
+        imageIdToFrameIndex,
+      );
 
       entries.push({
         annotationUID,

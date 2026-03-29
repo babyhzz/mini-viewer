@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 
-import "bootstrap-icons/font/bootstrap-icons.css";
 import "./globals.css";
 
 import { Providers } from "./providers";

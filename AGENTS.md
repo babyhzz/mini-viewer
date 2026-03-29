@@ -41,6 +41,20 @@ After every feature or bug fix, run `npm run verify`. Use `npm run test:e2e:dev`
 - Keep viewport tools registry-driven. When adding tools, actions, or groups, update `src/lib/tools/registry.ts`, `src/lib/tools/cornerstone-tool-adapter.ts`, and the relevant UI/tests together.
 - Treat viewer settings as schema-driven persisted documents. Extend defaults and normalization in `src/lib/settings/overlay.ts` before changing the stored shape.
 
+## Toolbar Icon & Viewer Chrome Rules
+- Treat `src/components/app-icon.tsx` as the single source of truth for project-local toolbar and menu icons. Do not reintroduce external icon packages for the viewer toolbar UI.
+- When revising medical-viewer icons, follow the project skill at `.codex/skills/medical-svg-icons/` and keep metaphors aligned with mainstream viewers such as OHIF, Weasis, and RadiAnt.
+- Prefer literal, workstation-style toolbar metaphors:
+  - `select`: cursor / pointer
+  - `pan`: four-way cross arrows, not a hand icon
+  - measurement tools: ruler / line / angle / polyline semantics
+  - ROI tools: plain geometry without add/create `+` badges
+- Keep `fit`, `reset`, `rotateRight`, `flipHorizontal`, and `flipVertical` as first-level toolbar actions instead of hiding them inside a viewer-ops submenu.
+- The viewport toolbar should wrap to multiple rows when space is tight; do not default back to overflow-first behavior for primary tools.
+- Keep toolbar buttons and dropdown menu icons on the same rendered size system. Use the shared size variable in `app/globals.css` rather than tuning menu and toolbar icon sizes independently.
+- Two-tone accents should stay dark, restrained, and clinical. Avoid bright consumer-app colors or gray-only accents when a muted steel-blue / teal accent improves readability.
+- When touching toolbar iconography or toolbar structure, update the relevant Playwright smoke coverage and run `npm run verify`.
+
 ## Testing Guidelines
 Every change should pass:
 

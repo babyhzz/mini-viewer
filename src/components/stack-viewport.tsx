@@ -6,10 +6,16 @@ import type {
   PointerEvent as ReactPointerEvent,
   SetStateAction,
 } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Spin } from "antd";
 
-import { BootstrapIcon } from "@/components/bootstrap-icon";
+import { AppIcon } from "@/components/app-icon";
 import { DicomTagModal } from "@/components/dicom-tag-modal";
 import {
   createEmptyViewportAnnotationsState,
@@ -53,7 +59,15 @@ import {
   type ViewportSequenceSyncCommand,
   type ViewportSequenceSyncState,
 } from "@/lib/viewports/sequence-sync";
-import type { DicomImageNode, DicomSeriesNode, DicomStudyNode } from "@/types/dicom";
+import {
+  getViewportWindowPresetDefinition,
+  type ViewportViewCommand,
+} from "@/lib/viewports/view-commands";
+import type {
+  DicomImageNode,
+  DicomSeriesNode,
+  DicomStudyNode,
+} from "@/types/dicom";
 import type { ViewportOverlaySettings } from "@/types/settings";
 
 type ViewportStatus = "idle" | "loading" | "ready" | "error";
@@ -68,6 +82,7 @@ interface StackViewportProps {
   invertEnabled: boolean;
   overlaySettings: ViewportOverlaySettings;
   annotationCommand?: ViewportAnnotationCommand | null;
+  viewCommand?: ViewportViewCommand | null;
   sequenceSyncState?: ViewportSequenceSyncState;
   sequenceSyncCommand?: ViewportSequenceSyncCommand | null;
   crossStudyCalibrationCount?: number;
@@ -95,6 +110,9 @@ const STACK_CONTEXT_PREFETCH_CONFIG = {
   preserveExistingPool: false,
 };
 const DEFAULT_PAN_OFFSET = "0.00,0.00,0.00";
+const DEFAULT_VIEW_ZOOM = "na";
+const DEFAULT_VIEW_ROTATION = "0";
+const DEFAULT_VIEW_FLIP = "false";
 const DEFAULT_VOI_WINDOW_WIDTH = "na";
 const DEFAULT_VOI_WINDOW_CENTER = "na";
 const MAX_TRANSIENT_RENDER_RECOVERY_ATTEMPTS = 1;
@@ -128,6 +146,7 @@ interface SelectScrollGestureState {
 const EMPTY_ANNOTATION_COUNTS: ViewportAnnotationCounts = {
   select: 0,
   pan: 0,
+  zoom: 0,
   windowLevel: 0,
   length: 0,
   polyline: 0,
@@ -183,6 +202,35 @@ function formatPanOffset(
     .join(",");
 }
 
+function normalizeViewportRotation(rotation: number | undefined) {
+  if (typeof rotation !== "number" || !Number.isFinite(rotation)) {
+    return DEFAULT_VIEW_ROTATION;
+  }
+
+  const normalizedRotation = ((rotation % 360) + 360) % 360;
+
+  return normalizedRotation.toFixed(0);
+}
+
+function getViewportViewSnapshot(
+  viewport: import("@cornerstonejs/core").Types.IStackViewport,
+  initialCamera: CameraSnapshot | null,
+) {
+  const { zoom, rotation } = viewport.getViewPresentation();
+  const camera = viewport.getCamera();
+
+  return {
+    panOffset: formatPanOffset(viewport, initialCamera),
+    zoom:
+      typeof zoom === "number" && Number.isFinite(zoom)
+        ? zoom.toFixed(4)
+        : DEFAULT_VIEW_ZOOM,
+    rotation: normalizeViewportRotation(rotation),
+    flipHorizontal: String(Boolean(camera.flipHorizontal)),
+    flipVertical: String(Boolean(camera.flipVertical)),
+  };
+}
+
 function getTotalViewportAnnotationCount(
   annotationCounts: ViewportAnnotationCounts,
 ) {
@@ -212,15 +260,169 @@ function getViewportVoiSnapshot(
     };
   }
 
-  const { windowWidth, windowCenter } = core.utilities.windowLevel.toWindowLevel(
-    voiRange.lower,
-    voiRange.upper,
-  );
+  const { windowWidth, windowCenter } =
+    core.utilities.windowLevel.toWindowLevel(voiRange.lower, voiRange.upper);
 
   return {
     windowWidth: windowWidth.toFixed(2),
     windowCenter: windowCenter.toFixed(2),
   };
+}
+
+function syncViewportViewState(
+  viewport: import("@cornerstonejs/core").Types.IStackViewport,
+  initialCamera: CameraSnapshot | null,
+  setPanOffset: Dispatch<SetStateAction<string>>,
+  setViewZoom: Dispatch<SetStateAction<string>>,
+  setViewRotation: Dispatch<SetStateAction<string>>,
+  setViewFlipHorizontal: Dispatch<SetStateAction<string>>,
+  setViewFlipVertical: Dispatch<SetStateAction<string>>,
+) {
+  const nextSnapshot = getViewportViewSnapshot(viewport, initialCamera);
+
+  setPanOffset((previous) =>
+    previous === nextSnapshot.panOffset ? previous : nextSnapshot.panOffset,
+  );
+  setViewZoom((previous) =>
+    previous === nextSnapshot.zoom ? previous : nextSnapshot.zoom,
+  );
+  setViewRotation((previous) =>
+    previous === nextSnapshot.rotation ? previous : nextSnapshot.rotation,
+  );
+  setViewFlipHorizontal((previous) =>
+    previous === nextSnapshot.flipHorizontal
+      ? previous
+      : nextSnapshot.flipHorizontal,
+  );
+  setViewFlipVertical((previous) =>
+    previous === nextSnapshot.flipVertical
+      ? previous
+      : nextSnapshot.flipVertical,
+  );
+}
+
+function applyViewportViewCommand(
+  core: typeof import("@cornerstonejs/core"),
+  viewport: import("@cornerstonejs/core").Types.IStackViewport,
+  command: ViewportViewCommand,
+  invertEnabled: boolean,
+) {
+  if (command.type === "fit") {
+    const currentViewPresentation = viewport.getViewPresentation({
+      rotation: true,
+      flipHorizontal: true,
+      flipVertical: true,
+      zoom: false,
+      pan: false,
+      displayArea: false,
+    });
+
+    viewport.resetCamera({
+      resetPan: true,
+      resetZoom: true,
+    });
+    viewport.setViewPresentation(currentViewPresentation);
+    viewport.render();
+    return;
+  }
+
+  if (command.type === "reset") {
+    const stackViewport = viewport as import("@cornerstonejs/core").Types.IStackViewport & {
+      setRotation?: (rotation: number) => void;
+    };
+
+    viewport.resetProperties();
+    viewport.setProperties({
+      invert: invertEnabled,
+    });
+    viewport.resetCamera();
+    stackViewport.setRotation?.(0);
+    viewport.setViewPresentation({
+      rotation: 0,
+      flipHorizontal: false,
+      flipVertical: false,
+    });
+    viewport.render();
+    return;
+  }
+
+  if (command.type === "rotateRight") {
+    const currentViewPresentation = viewport.getViewPresentation({
+      rotation: true,
+      flipHorizontal: false,
+      flipVertical: false,
+      zoom: false,
+      pan: false,
+      displayArea: false,
+    });
+    const currentRotation =
+      typeof currentViewPresentation.rotation === "number"
+        ? currentViewPresentation.rotation
+        : 0;
+
+    viewport.setViewPresentation({
+      rotation: (currentRotation + 90) % 360,
+    });
+    viewport.render();
+    return;
+  }
+
+  if (command.type === "flipHorizontal" || command.type === "flipVertical") {
+    const currentViewPresentation = viewport.getViewPresentation({
+      rotation: true,
+      flipHorizontal: true,
+      flipVertical: true,
+      zoom: false,
+      pan: false,
+      displayArea: false,
+    });
+    const nextFlipHorizontal =
+      command.type === "flipHorizontal"
+        ? !Boolean(currentViewPresentation.flipHorizontal)
+        : Boolean(currentViewPresentation.flipHorizontal);
+    const nextFlipVertical =
+      command.type === "flipVertical"
+        ? !Boolean(currentViewPresentation.flipVertical)
+        : Boolean(currentViewPresentation.flipVertical);
+
+    viewport.setViewPresentation({
+      rotation:
+        typeof currentViewPresentation.rotation === "number"
+          ? currentViewPresentation.rotation
+          : 0,
+      flipHorizontal: nextFlipHorizontal,
+      flipVertical: nextFlipVertical,
+    });
+    viewport.render();
+    return;
+  }
+
+  const presetDefinition = getViewportWindowPresetDefinition(command.presetId);
+
+  if (!presetDefinition) {
+    return;
+  }
+
+  if (
+    presetDefinition.windowWidth == null ||
+    presetDefinition.windowCenter == null
+  ) {
+    viewport.resetProperties();
+    viewport.setProperties({
+      invert: invertEnabled,
+    });
+    viewport.render();
+    return;
+  }
+
+  viewport.setProperties({
+    invert: invertEnabled,
+    voiRange: core.utilities.windowLevel.toLowHighRange(
+      presetDefinition.windowWidth,
+      presetDefinition.windowCenter,
+    ),
+  });
+  viewport.render();
 }
 
 function buildViewportAnnotationCounts(
@@ -286,9 +488,7 @@ function syncViewportAnnotationState(
   tools: typeof import("@cornerstonejs/tools"),
   element: HTMLDivElement,
   series: DicomSeriesNode | null,
-  onAnnotationsChange:
-    | ((state: ViewportAnnotationsState) => void)
-    | undefined,
+  onAnnotationsChange: ((state: ViewportAnnotationsState) => void) | undefined,
   setAnnotationCounts: Dispatch<SetStateAction<ViewportAnnotationCounts>>,
   setSelectedAnnotationCount: Dispatch<SetStateAction<number>>,
   lastReportedParentStateRef:
@@ -308,7 +508,9 @@ function syncViewportAnnotationState(
       : nextAnnotationCounts,
   );
   setSelectedAnnotationCount((previous) =>
-    previous === selectedAnnotationUIDs.length ? previous : selectedAnnotationUIDs.length,
+    previous === selectedAnnotationUIDs.length
+      ? previous
+      : selectedAnnotationUIDs.length,
   );
 
   if (!notifyParent) {
@@ -351,15 +553,15 @@ function disableStackContextPrefetchSafely(
     tools.utilities.stackContextPrefetch.disable(element);
   } catch (error) {
     if (process.env.NODE_ENV !== "production") {
-      console.warn("Failed to disable stack prefetch for viewport cleanup", error);
+      console.warn(
+        "Failed to disable stack prefetch for viewport cleanup",
+        error,
+      );
     }
   }
 }
 
-function normalizeWheelDelta(
-  event: WheelEvent,
-  viewportHeight: number,
-) {
+function normalizeWheelDelta(event: WheelEvent, viewportHeight: number) {
   if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
     return event.deltaY * WHEEL_LINE_HEIGHT_PX;
   }
@@ -499,12 +701,11 @@ function ViewportImageLayoutCanvas({
     height: 0,
   });
   const [hasError, setHasError] = useState(false);
-  const [sourceDimensions, setSourceDimensions] = useState<CanvasSourceDimensions>(
-    {
+  const [sourceDimensions, setSourceDimensions] =
+    useState<CanvasSourceDimensions>({
       width: 512,
       height: 512,
-    },
-  );
+    });
   const [cellSize, setCellSize] = useState<ViewportCellSize>({
     width: 0,
     height: 0,
@@ -677,6 +878,7 @@ export function StackViewport({
   invertEnabled,
   overlaySettings,
   annotationCommand = null,
+  viewCommand = null,
   sequenceSyncState,
   sequenceSyncCommand = null,
   crossStudyCalibrationCount = 0,
@@ -698,16 +900,20 @@ export function StackViewport({
   const onAnnotationsChangeRef = useRef(onAnnotationsChange);
   const onRuntimeStateChangeRef = useRef(onRuntimeStateChange);
   const lastReportedParentAnnotationStateRef =
-    useRef<ViewportAnnotationsState | null>(createEmptyViewportAnnotationsState());
+    useRef<ViewportAnnotationsState | null>(
+      createEmptyViewportAnnotationsState(),
+    );
   const coreRef = useRef<typeof import("@cornerstonejs/core") | null>(null);
-  const viewportRef =
-    useRef<import("@cornerstonejs/core").Types.IStackViewport | null>(null);
+  const viewportRef = useRef<
+    import("@cornerstonejs/core").Types.IStackViewport | null
+  >(null);
   const toolsRef = useRef<typeof import("@cornerstonejs/tools") | null>(null);
   const renderingEngineIdRef = useRef<string | null>(null);
   const viewportIdRef = useRef<string | null>(null);
   const toolGroupIdRef = useRef<string | null>(null);
   const initialCameraRef = useRef<CameraSnapshot | null>(null);
   const lastHandledAnnotationCommandIdRef = useRef<number | null>(null);
+  const lastHandledViewCommandIdRef = useRef<number | null>(null);
   const lastHandledSequenceSyncCommandIdRef = useRef<number | null>(null);
   const pendingNavigationSourceRef =
     useRef<StackViewportNavigationSource | null>(null);
@@ -716,10 +922,17 @@ export function StackViewport({
   const [status, setStatus] = useState<ViewportStatus>("idle");
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [panOffset, setPanOffset] = useState(DEFAULT_PAN_OFFSET);
+  const [viewZoom, setViewZoom] = useState(DEFAULT_VIEW_ZOOM);
+  const [viewRotation, setViewRotation] = useState(DEFAULT_VIEW_ROTATION);
+  const [viewFlipHorizontal, setViewFlipHorizontal] =
+    useState(DEFAULT_VIEW_FLIP);
+  const [viewFlipVertical, setViewFlipVertical] = useState(DEFAULT_VIEW_FLIP);
   const [annotationCounts, setAnnotationCounts] =
     useState<ViewportAnnotationCounts>(EMPTY_ANNOTATION_COUNTS);
   const [selectedAnnotationCount, setSelectedAnnotationCount] = useState(0);
-  const [voiWindowWidth, setVoiWindowWidth] = useState(DEFAULT_VOI_WINDOW_WIDTH);
+  const [voiWindowWidth, setVoiWindowWidth] = useState(
+    DEFAULT_VOI_WINDOW_WIDTH,
+  );
   const [voiWindowCenter, setVoiWindowCenter] = useState(
     DEFAULT_VOI_WINDOW_CENTER,
   );
@@ -810,13 +1023,12 @@ export function StackViewport({
     ? clampNumber(currentImageIndex || 1, 1, maxImageLayoutStartFrameIndex)
     : 0;
   const imageLayoutEndFrameIndex = imageLayoutStartFrameIndex
-    ? Math.min(
-        totalImages,
-        imageLayoutStartFrameIndex + visibleImageCount - 1,
-      )
+    ? Math.min(totalImages, imageLayoutStartFrameIndex + visibleImageCount - 1)
     : 0;
   const imageLayoutFrameLabel =
-    visibleImageCount > 1 && imageLayoutStartFrameIndex && imageLayoutEndFrameIndex
+    visibleImageCount > 1 &&
+    imageLayoutStartFrameIndex &&
+    imageLayoutEndFrameIndex
       ? `[${imageLayoutStartFrameIndex}-${imageLayoutEndFrameIndex}]/[${totalImages}]`
       : `[${imageLayoutStartFrameIndex || currentImageIndex}]/[${totalImages}]`;
   const imageLayoutCells = Array.from(
@@ -880,10 +1092,16 @@ export function StackViewport({
   });
   const dicomTagSources = imageLayoutCells
     .filter((cell) =>
-      cellSelection === "all" ? Boolean(cell.image) : cell.cellIndex === cellSelection,
+      cellSelection === "all"
+        ? Boolean(cell.image)
+        : cell.cellIndex === cellSelection,
     )
-    .filter((cell): cell is (typeof imageLayoutCells)[number] & { image: DicomImageNode } =>
-      Boolean(cell.image),
+    .filter(
+      (
+        cell,
+      ): cell is (typeof imageLayoutCells)[number] & {
+        image: DicomImageNode;
+      } => Boolean(cell.image),
     )
     .map((cell) => ({
       id: `cell-${cell.cellIndex}`,
@@ -1060,7 +1278,11 @@ export function StackViewport({
       return;
     }
 
-    applyActiveViewportTool(toolsRef.current, toolGroupIdRef.current, activeTool);
+    applyActiveViewportTool(
+      toolsRef.current,
+      toolGroupIdRef.current,
+      activeTool,
+    );
   }, [activeTool]);
 
   useEffect(() => {
@@ -1071,7 +1293,10 @@ export function StackViewport({
     }
 
     viewportRef.current.setProperties({ invert: invertEnabled });
-    const nextVoi = getViewportVoiSnapshot(coreRef.current, viewportRef.current);
+    const nextVoi = getViewportVoiSnapshot(
+      coreRef.current,
+      viewportRef.current,
+    );
     setVoiWindowWidth(nextVoi.windowWidth);
     setVoiWindowCenter(nextVoi.windowCenter);
     viewportRef.current.render();
@@ -1090,12 +1315,8 @@ export function StackViewport({
 
     let cancelled = false;
     let cleanupElement: HTMLDivElement | null = null;
-    let cleanupTools:
-      | typeof import("@cornerstonejs/tools")
-      | undefined;
-    let cleanupCore:
-      | typeof import("@cornerstonejs/core")
-      | undefined;
+    let cleanupTools: typeof import("@cornerstonejs/tools") | undefined;
+    let cleanupCore: typeof import("@cornerstonejs/core") | undefined;
     let currentRenderingEngineId = "";
     let currentViewportId = "";
     let currentToolGroupId = "";
@@ -1114,8 +1335,14 @@ export function StackViewport({
         return;
       }
 
-      setPanOffset(
-        formatPanOffset(viewportRef.current, initialCameraRef.current),
+      syncViewportViewState(
+        viewportRef.current,
+        initialCameraRef.current,
+        setPanOffset,
+        setViewZoom,
+        setViewRotation,
+        setViewFlipHorizontal,
+        setViewFlipVertical,
       );
     };
     const handleVoiModified = () => {
@@ -1171,9 +1398,8 @@ export function StackViewport({
         return;
       }
 
-      const scrollDelta = wheelDeltaRef.current > 0
-        ? nextScrollSteps
-        : -nextScrollSteps;
+      const scrollDelta =
+        wheelDeltaRef.current > 0 ? nextScrollSteps : -nextScrollSteps;
 
       core.utilities.scroll(viewport, {
         delta: scrollDelta,
@@ -1305,8 +1531,14 @@ export function StackViewport({
       toolGroupIdRef.current = null;
       initialCameraRef.current = null;
       lastHandledAnnotationCommandIdRef.current = null;
+      lastHandledViewCommandIdRef.current = null;
+      setPanOffset(DEFAULT_PAN_OFFSET);
       setAnnotationCounts(EMPTY_ANNOTATION_COUNTS);
       setSelectedAnnotationCount(0);
+      setViewZoom(DEFAULT_VIEW_ZOOM);
+      setViewRotation(DEFAULT_VIEW_ROTATION);
+      setViewFlipHorizontal(DEFAULT_VIEW_FLIP);
+      setViewFlipVertical(DEFAULT_VIEW_FLIP);
       setVoiWindowWidth(DEFAULT_VOI_WINDOW_WIDTH);
       setVoiWindowCenter(DEFAULT_VOI_WINDOW_CENTER);
       onAnnotationsChangeRef.current?.({
@@ -1349,7 +1581,12 @@ export function StackViewport({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [containerReady, viewportRuntimeReady, viewportSize.height, viewportSize.width]);
+  }, [
+    containerReady,
+    viewportRuntimeReady,
+    viewportSize.height,
+    viewportSize.width,
+  ]);
 
   useEffect(() => {
     const core = coreRef.current;
@@ -1473,7 +1710,11 @@ export function StackViewport({
         return;
       }
 
-      selectViewportAnnotation(tools, viewportId, annotationCommand.annotationUID);
+      selectViewportAnnotation(
+        tools,
+        viewportId,
+        annotationCommand.annotationUID,
+      );
       return;
     }
 
@@ -1498,6 +1739,51 @@ export function StackViewport({
     viewportRuntimeReady,
     viewportRuntimeSeed,
   ]);
+
+  useEffect(() => {
+    if (!viewCommand) {
+      return;
+    }
+
+    if (viewCommand.targetViewportKey !== viewportKey) {
+      return;
+    }
+
+    if (lastHandledViewCommandIdRef.current === viewCommand.id) {
+      return;
+    }
+
+    const core = coreRef.current;
+    const viewport = viewportRef.current;
+
+    if (!viewportRuntimeReady || !core || !viewport) {
+      return;
+    }
+
+    lastHandledViewCommandIdRef.current = viewCommand.id;
+
+    applyViewportViewCommand(
+      core,
+      viewport,
+      viewCommand,
+      invertEnabledRef.current,
+    );
+
+    syncViewportViewState(
+      viewport,
+      initialCameraRef.current,
+      setPanOffset,
+      setViewZoom,
+      setViewRotation,
+      setViewFlipHorizontal,
+      setViewFlipVertical,
+    );
+
+    const nextVoi = getViewportVoiSnapshot(core, viewport);
+
+    setVoiWindowWidth(nextVoi.windowWidth);
+    setVoiWindowCenter(nextVoi.windowCenter);
+  }, [viewCommand, viewportKey, viewportRuntimeReady, viewportRuntimeSeed]);
 
   useEffect(() => {
     const core = coreRef.current;
@@ -1528,6 +1814,10 @@ export function StackViewport({
         setStatus("idle");
         setCurrentImageIndex(0);
         setPanOffset(DEFAULT_PAN_OFFSET);
+        setViewZoom(DEFAULT_VIEW_ZOOM);
+        setViewRotation(DEFAULT_VIEW_ROTATION);
+        setViewFlipHorizontal(DEFAULT_VIEW_FLIP);
+        setViewFlipVertical(DEFAULT_VIEW_FLIP);
         setAnnotationCounts(EMPTY_ANNOTATION_COUNTS);
         setSelectedAnnotationCount(0);
         setVoiWindowWidth(DEFAULT_VOI_WINDOW_WIDTH);
@@ -1548,6 +1838,10 @@ export function StackViewport({
       setStatus("loading");
       setCurrentImageIndex(1);
       setPanOffset(DEFAULT_PAN_OFFSET);
+      setViewZoom(DEFAULT_VIEW_ZOOM);
+      setViewRotation(DEFAULT_VIEW_ROTATION);
+      setViewFlipHorizontal(DEFAULT_VIEW_FLIP);
+      setViewFlipVertical(DEFAULT_VIEW_FLIP);
       initialCameraRef.current = null;
       wheelDeltaRef.current = 0;
       lastWheelAtRef.current = 0;
@@ -1589,6 +1883,15 @@ export function StackViewport({
           lastReportedParentAnnotationStateRef,
         );
         initialCameraRef.current = getCameraSnapshot(currentViewport);
+        syncViewportViewState(
+          currentViewport,
+          initialCameraRef.current,
+          setPanOffset,
+          setViewZoom,
+          setViewRotation,
+          setViewFlipHorizontal,
+          setViewFlipVertical,
+        );
         transientRecoveryAttemptsRef.current = 0;
 
         if (!cancelled) {
@@ -1654,7 +1957,9 @@ export function StackViewport({
       return;
     }
 
-    if (lastHandledSequenceSyncCommandIdRef.current === sequenceSyncCommand.id) {
+    if (
+      lastHandledSequenceSyncCommandIdRef.current === sequenceSyncCommand.id
+    ) {
       return;
     }
 
@@ -1702,6 +2007,10 @@ export function StackViewport({
       data-active-tool={activeTool}
       data-invert-enabled={String(invertEnabled)}
       data-pan-offset={panOffset}
+      data-view-zoom={viewZoom}
+      data-view-rotation={viewRotation}
+      data-view-flip-horizontal={viewFlipHorizontal}
+      data-view-flip-vertical={viewFlipVertical}
       data-status={status}
       data-frame-index={currentImageIndex}
       data-frame-count={totalImages}
@@ -1715,7 +2024,9 @@ export function StackViewport({
       data-viewport-selected={String(isSelected)}
       data-cell-selection={String(cellSelection)}
       data-select-scroll-active={String(isSelectScrollActive)}
-      data-sequence-sync-state={encodeViewportSequenceSyncState(sequenceSyncState)}
+      data-sequence-sync-state={encodeViewportSequenceSyncState(
+        sequenceSyncState,
+      )}
       data-cross-study-calibration-count={crossStudyCalibrationCount}
       data-voi-window-width={voiWindowWidth}
       data-voi-window-center={voiWindowCenter}
@@ -1767,7 +2078,9 @@ export function StackViewport({
                     )
                   : null
               }
-              selectionState={imageLayoutCellSelectionStateByIndex[cell.cellIndex]}
+              selectionState={
+                imageLayoutCellSelectionStateByIndex[cell.cellIndex]
+              }
             />
           ))}
         </div>
@@ -1807,10 +2120,9 @@ export function StackViewport({
           <Spin
             size="large"
             indicator={
-              <BootstrapIcon
+              <AppIcon
                 name="arrow-repeat"
-                spin
-                className="app-spin-indicator"
+                className="app-icon app-spin-indicator is-spin"
               />
             }
           />

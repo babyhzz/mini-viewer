@@ -1,0 +1,4 @@
+interface:
+  display_name: "Medical SVG Icons"
+  short_description: "Generate serious, readable SVG icons for DICOM and radiology viewers"
+  default_prompt: "Use $medical-svg-icons to benchmark mainstream medical imaging viewers first, then generate or revise SVG icons for a medical imaging viewer with a unified 24x24 system, stronger semantic metaphors, larger perceived size, and optional restrained two-tone color."

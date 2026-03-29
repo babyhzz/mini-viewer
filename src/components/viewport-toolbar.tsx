@@ -2,7 +2,7 @@
 
 import { Dropdown } from "antd";
 import type { MenuProps } from "antd";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import {
   ViewportToolbarIcon,
@@ -35,7 +35,7 @@ import {
   getViewportToolDisplayLabel,
   getViewportToolGroupDefinition,
   getViewportToolGroupSelection,
-  getViewportToolShortLabel,
+  isViewportToolSupportedInMpr,
   isViewportToolInGroup,
   viewportToolbarItems,
   type ViewportAction,
@@ -43,6 +43,10 @@ import {
   type ViewportToolGroupSelections,
   type ViewportToolbarItemDefinition,
 } from "@/lib/tools/registry";
+import {
+  getViewportWindowPresetDefinitions,
+  type ViewportWindowPresetId,
+} from "@/lib/viewports/view-commands";
 
 interface ViewportToolbarProps {
   activeTool: ViewportTool;
@@ -56,25 +60,21 @@ interface ViewportToolbarProps {
   invertEnabled: boolean;
   annotationCount: number;
   selectedAnnotationCount: number;
+  viewCommandsEnabled: boolean;
   onToolChange: (tool: ViewportTool) => void;
   onLayoutChange: (layoutId: ViewportLayoutId) => void;
   onImageLayoutChange: (layoutId: ViewportImageLayoutId) => void;
   onMprLayoutChange: (layoutId: ViewportMprLayoutId | "off") => void;
   onSequenceSyncToggle: (syncType: ViewportSequenceSyncType) => void;
   onSequenceSyncClear: () => void;
-  onAction: (action: ViewportAction) => void;
-  onAnnotationManageAction: (
-    action: "deleteSelected" | "clearAll",
+  onWindowPresetSelect: (presetId: ViewportWindowPresetId) => void;
+  onViewAction: (
+    action: "fit" | "reset" | "rotateRight" | "flipHorizontal" | "flipVertical",
   ) => void;
+  onAction: (action: ViewportAction) => void;
+  onAnnotationManageAction: (action: "deleteSelected" | "clearAll") => void;
   onOpenSettings: () => void;
   disabled?: boolean;
-}
-
-interface OverflowToolbarOption {
-  value: string;
-  label: string;
-  iconName?: ViewportToolbarIconName;
-  onSelect: () => void;
 }
 
 interface LayoutPreviewCell {
@@ -85,10 +85,6 @@ interface LayoutPreviewCell {
   tone?: "neutral" | "axial" | "coronal" | "sagittal" | "inactive";
 }
 
-const TOOL_BUTTON_MIN_WIDTH = 50;
-const TOOL_GROUP_MIN_WIDTH = 50;
-const TOOL_OVERFLOW_MIN_WIDTH = 50;
-
 function getToolbarItemIconName(
   item: ViewportToolbarItemDefinition,
   groupSelections: ViewportToolGroupSelections,
@@ -98,14 +94,6 @@ function getToolbarItemIconName(
   }
 
   return item.id;
-}
-
-function getToolbarItemMinWidth(item: ViewportToolbarItemDefinition) {
-  if (item.kind === "group") {
-    return TOOL_GROUP_MIN_WIDTH;
-  }
-
-  return TOOL_BUTTON_MIN_WIDTH;
 }
 
 function createUniformPreviewCells(rows: number, columns: number) {
@@ -180,7 +168,9 @@ function renderLayoutMenuOption({
         ))}
         {inactive ? <div className="viewport-layout-preview-slash" /> : null}
       </div>
-      <span className="viewport-sr-only">{label} · {description}</span>
+      <span className="viewport-sr-only">
+        {label} · {description}
+      </span>
     </div>
   );
 }
@@ -207,189 +197,20 @@ function renderToolMenuOption({
   );
 }
 
-function getVisibleItemCount(
-  availableWidth: number,
-  items: ViewportToolbarItemDefinition[],
-) {
-  if (!availableWidth || items.length === 0) {
-    return items.length;
-  }
-
-  const totalWidth = items.reduce(
-    (sum, item) => sum + getToolbarItemMinWidth(item),
-    0,
-  );
-
-  if (totalWidth <= availableWidth) {
-    return items.length;
-  }
-
-  const maxVisibleWidth = Math.max(0, availableWidth - TOOL_OVERFLOW_MIN_WIDTH);
-  let consumedWidth = 0;
-  let visibleCount = 0;
-
-  for (const item of items) {
-    const itemWidth = getToolbarItemMinWidth(item);
-
-    if (consumedWidth + itemWidth > maxVisibleWidth) {
-      break;
-    }
-
-    consumedWidth += itemWidth;
-    visibleCount += 1;
-  }
-
-  return visibleCount;
-}
-
-function buildOverflowOptions(
-  items: ViewportToolbarItemDefinition[],
-  viewportMode: ViewportMode,
-  onToolChange: (tool: ViewportTool) => void,
-  onLayoutChange: (layoutId: ViewportLayoutId) => void,
-  onImageLayoutChange: (layoutId: ViewportImageLayoutId) => void,
-  onMprLayoutChange: (layoutId: ViewportMprLayoutId | "off") => void,
-  sequenceSyncState: ViewportSequenceSyncState,
-  onSequenceSyncToggle: (syncType: ViewportSequenceSyncType) => void,
-  onSequenceSyncClear: () => void,
-  onAction: (action: ViewportAction) => void,
-  onAnnotationManageAction: (
-    action: "deleteSelected" | "clearAll",
-  ) => void,
-) {
-  const options: OverflowToolbarOption[] = [];
-
-  for (const item of items) {
-    if (isToolbarItemModeDisabled(item, viewportMode)) {
-      continue;
-    }
-
-    if (item.kind === "tool") {
-      options.push({
-        value: item.id,
-        label: item.label,
-        iconName: item.id,
-        onSelect: () => onToolChange(item.id),
-      });
-      continue;
-    }
-
-    if (item.kind === "action") {
-      options.push({
-        value: item.id,
-        label: item.label,
-        iconName: item.id,
-        onSelect: () => onAction(item.id),
-      });
-      continue;
-    }
-
-    if (item.kind === "menu") {
-      if (item.id === "imageLayout") {
-        for (const layout of getViewportImageLayoutDefinitions()) {
-          options.push({
-            value: `${item.id}:${layout.id}`,
-            label: `${item.label} · ${layout.label}`,
-            iconName: item.id,
-            onSelect: () => onImageLayoutChange(layout.id),
-          });
-        }
-
-        continue;
-      }
-
-      if (item.id === "layout") {
-        for (const layout of getViewportLayoutDefinitions()) {
-          options.push({
-            value: `${item.id}:${layout.id}`,
-            label: `${item.label} · ${layout.label}`,
-            iconName: item.id,
-            onSelect: () => onLayoutChange(layout.id),
-          });
-        }
-
-        continue;
-      }
-
-      if (item.id === "mprLayout") {
-        options.push({
-          value: `${item.id}:off`,
-          label: "MPR · 关闭",
-          iconName: item.id,
-          onSelect: () => onMprLayoutChange("off"),
-        });
-
-        for (const layout of getViewportMprLayoutDefinitions()) {
-          options.push({
-            value: `${item.id}:${layout.id}`,
-            label: `${item.label} · ${layout.label}`,
-            iconName: item.id,
-            onSelect: () => onMprLayoutChange(layout.id),
-          });
-        }
-
-        continue;
-      }
-
-      if (item.id === "sequenceSync") {
-        options.push({
-          value: `${item.id}:toggleSameStudy`,
-          label: `序列同步 · ${sequenceSyncState.sameStudy ? "关闭" : "开启"}同检查同步`,
-          iconName: item.id,
-          onSelect: () => onSequenceSyncToggle("sameStudy"),
-        });
-        options.push({
-          value: `${item.id}:toggleCrossStudy`,
-          label: `序列同步 · ${sequenceSyncState.crossStudy ? "关闭" : "开启"}跨检查同步`,
-          iconName: item.id,
-          onSelect: () => onSequenceSyncToggle("crossStudy"),
-        });
-        if (hasEnabledViewportSequenceSync(sequenceSyncState)) {
-          options.push({
-            value: `${item.id}:clear`,
-            label: "序列同步 · 全部关闭",
-            iconName: item.id,
-            onSelect: onSequenceSyncClear,
-          });
-        }
-        continue;
-      }
-
-      options.push({
-        value: `${item.id}:deleteSelected`,
-        label: "删除图元 · 删除选中",
-        iconName: item.id,
-        onSelect: () => onAnnotationManageAction("deleteSelected"),
-      });
-      options.push({
-        value: `${item.id}:clearAll`,
-        label: "删除图元 · 清空全部",
-        iconName: item.id,
-        onSelect: () => onAnnotationManageAction("clearAll"),
-      });
-      continue;
-    }
-
-    const groupDefinition = getViewportToolGroupDefinition(item.id);
-
-    for (const toolId of groupDefinition.toolIds) {
-      options.push({
-        value: `${item.id}:${toolId}`,
-        label: `${groupDefinition.label} · ${getViewportToolShortLabel(toolId)}`,
-        iconName: toolId,
-        onSelect: () => onToolChange(toolId),
-      });
-    }
-  }
-
-  return options;
-}
-
 function isToolbarItemModeDisabled(
   item: ViewportToolbarItemDefinition,
   viewportMode: ViewportMode,
+  viewCommandsEnabled: boolean,
 ) {
   if (viewportMode !== "mpr") {
+    if (
+      !viewCommandsEnabled &&
+      ((item.kind === "menu" && item.id === "windowPreset") ||
+        item.kind === "viewAction")
+    ) {
+      return true;
+    }
+
     return false;
   }
 
@@ -397,12 +218,21 @@ function isToolbarItemModeDisabled(
     return item.id === "measure" || item.id === "roi";
   }
 
+  if (item.kind === "tool") {
+    return !isViewportToolSupportedInMpr(item.id);
+  }
+
   if (item.kind === "action") {
     return false;
   }
 
+  if (item.kind === "viewAction") {
+    return true;
+  }
+
   if (item.kind === "menu") {
     return (
+      item.id === "windowPreset" ||
       item.id === "imageLayout" ||
       item.id === "sequenceSync" ||
       item.id === "annotationManage"
@@ -424,68 +254,44 @@ export function ViewportToolbar({
   invertEnabled,
   annotationCount,
   selectedAnnotationCount,
+  viewCommandsEnabled,
   onToolChange,
   onLayoutChange,
   onImageLayoutChange,
   onMprLayoutChange,
   onSequenceSyncToggle,
   onSequenceSyncClear,
+  onWindowPresetSelect,
+  onViewAction,
   onAction,
   onAnnotationManageAction,
   onOpenSettings,
   disabled = false,
 }: ViewportToolbarProps) {
-  const itemsRef = useRef<HTMLDivElement | null>(null);
-  const [availableWidth, setAvailableWidth] = useState(0);
   const [sequenceSyncMenuOpen, setSequenceSyncMenuOpen] = useState(false);
-
-  useEffect(() => {
-    const element = itemsRef.current;
-
-    if (!element) {
-      return;
-    }
-
-    const updateWidth = () => {
-      setAvailableWidth(Math.round(element.clientWidth));
-    };
-
-    updateWidth();
-
-    const observer = new ResizeObserver(() => {
-      updateWidth();
-    });
-
-    observer.observe(element);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
-  const visibleItemCount = getVisibleItemCount(availableWidth, viewportToolbarItems);
-  const visibleItems = viewportToolbarItems.slice(0, visibleItemCount);
-  const overflowItems = viewportToolbarItems.slice(visibleItemCount);
-  const overflowOptions = buildOverflowOptions(
-    overflowItems,
-    viewportMode,
-    onToolChange,
-    onLayoutChange,
-    onImageLayoutChange,
-    onMprLayoutChange,
-    sequenceSyncState,
-    onSequenceSyncToggle,
-    onSequenceSyncClear,
-    onAction,
-    onAnnotationManageAction,
-  );
   const currentImageLayout = getViewportImageLayoutDefinition(imageLayoutId);
   const currentLayout = getViewportLayoutDefinition(layoutId);
   const currentMprLayout = getViewportMprLayoutDefinition(mprLayoutId);
-  const enabledSequenceSyncTypes = getEnabledViewportSequenceSyncTypes(
-    sequenceSyncState,
-  );
+  const enabledSequenceSyncTypes =
+    getEnabledViewportSequenceSyncTypes(sequenceSyncState);
   const mprLayoutMenuValue = viewportMode === "mpr" ? mprLayoutId : "off";
+  const windowPresetMenu: MenuProps = {
+    items: getViewportWindowPresetDefinitions().map((preset) => ({
+      key: preset.id,
+      label: renderToolMenuOption({
+        label:
+          preset.windowWidth != null && preset.windowCenter != null
+            ? `${preset.label} · WW ${preset.windowWidth} / WL ${preset.windowCenter}`
+            : preset.label,
+        iconName: "windowPreset",
+        testId: `viewport-window-preset-option-${preset.id}`,
+      }),
+      title: `${preset.label} · ${preset.description}`,
+    })),
+    onClick: ({ key }) => {
+      onWindowPresetSelect(key as ViewportWindowPresetId);
+    },
+  };
   const imageLayoutMenu: MenuProps = {
     selectable: true,
     selectedKeys: [imageLayoutId],
@@ -625,19 +431,6 @@ export function ViewportToolbar({
       }
     },
   };
-  const overflowMenu: MenuProps = {
-    items: overflowOptions.map((option) => ({
-      key: option.value,
-      label: renderToolMenuOption({
-        label: option.label,
-        iconName: option.iconName,
-        testId: `viewport-tool-overflow-option-${option.value.replaceAll(":", "-")}`,
-      }),
-    })),
-    onClick: ({ key }) => {
-      overflowOptions.find((option) => option.value === key)?.onSelect();
-    },
-  };
   const annotationManageMenu: MenuProps = {
     items: [
       {
@@ -655,9 +448,7 @@ export function ViewportToolbar({
         key: "clearAll",
         label: (
           <span data-testid="viewport-annotation-clear-all">
-            {annotationCount > 0
-              ? `清空全部 (${annotationCount})`
-              : "清空全部"}
+            {annotationCount > 0 ? `清空全部 (${annotationCount})` : "清空全部"}
           </span>
         ),
         disabled: annotationCount === 0,
@@ -673,10 +464,15 @@ export function ViewportToolbar({
   return (
     <div className="viewport-toolbar" data-testid="viewport-toolbar">
       <div className="viewport-toolbar-main">
-        <div className="viewport-toolbar-tools" ref={itemsRef}>
-          {visibleItems.map((item) => {
+        <div className="viewport-toolbar-tools">
+          {viewportToolbarItems.map((item) => {
             const itemDisabled =
-              disabled || isToolbarItemModeDisabled(item, viewportMode);
+              disabled ||
+              isToolbarItemModeDisabled(
+                item,
+                viewportMode,
+                viewCommandsEnabled,
+              );
 
             if (item.kind === "group") {
               const groupDefinition = getViewportToolGroupDefinition(item.id);
@@ -685,7 +481,8 @@ export function ViewportToolbar({
                 groupSelections,
               );
               const isActiveGroup = isViewportToolInGroup(activeTool, item.id);
-              const selectedToolLabel = getViewportToolDisplayLabel(selectedTool);
+              const selectedToolLabel =
+                getViewportToolDisplayLabel(selectedTool);
               const groupMenu: MenuProps = {
                 selectable: true,
                 selectedKeys: [selectedTool],
@@ -749,25 +546,29 @@ export function ViewportToolbar({
 
             if (item.kind === "menu") {
               const menu =
-                item.id === "imageLayout"
-                  ? imageLayoutMenu
-                  : item.id === "mprLayout"
-                    ? mprLayoutMenu
-                    : item.id === "sequenceSync"
-                      ? sequenceSyncMenu
-                  : item.id === "layout"
-                    ? layoutMenu
-                    : annotationManageMenu;
+                item.id === "windowPreset"
+                  ? windowPresetMenu
+                  : item.id === "imageLayout"
+                      ? imageLayoutMenu
+                      : item.id === "mprLayout"
+                        ? mprLayoutMenu
+                        : item.id === "sequenceSync"
+                          ? sequenceSyncMenu
+                          : item.id === "layout"
+                            ? layoutMenu
+                            : annotationManageMenu;
               const dataTestId =
-                item.id === "imageLayout"
-                  ? "viewport-image-layout-button"
-                  : item.id === "mprLayout"
-                  ? "viewport-mpr-layout-button"
-                  : item.id === "sequenceSync"
-                  ? "viewport-sequence-sync-button"
-                  : item.id === "layout"
-                  ? "viewport-layout-button"
-                  : "viewport-annotation-manage-button";
+                item.id === "windowPreset"
+                  ? "viewport-window-preset-button"
+                  : item.id === "imageLayout"
+                      ? "viewport-image-layout-button"
+                      : item.id === "mprLayout"
+                        ? "viewport-mpr-layout-button"
+                        : item.id === "sequenceSync"
+                          ? "viewport-sequence-sync-button"
+                          : item.id === "layout"
+                            ? "viewport-layout-button"
+                            : "viewport-annotation-manage-button";
               const count =
                 item.id === "annotationManage" && selectedAnnotationCount > 0
                   ? selectedAnnotationCount
@@ -775,21 +576,26 @@ export function ViewportToolbar({
                       sequenceSyncState.crossStudy &&
                       crossStudyCalibrationCount > 0
                     ? crossStudyCalibrationCount
-                  : null;
+                    : null;
               const title =
-                item.id === "imageLayout"
-                  ? `图像布局 ${currentImageLayout.label} · ${currentImageLayout.description}`
-                  : item.id === "mprLayout"
-                  ? viewportMode === "mpr"
-                    ? `MPR ${currentMprLayout.label} · ${currentMprLayout.description}`
-                    : "MPR 已关闭"
-                  : item.id === "sequenceSync"
-                  ? sequenceSyncState.crossStudy && crossStudyCalibrationCount > 0
-                    ? `${getViewportSequenceSyncStateLabel(sequenceSyncState)} · 已校准 ${crossStudyCalibrationCount} 对`
-                    : getViewportSequenceSyncStateLabel(sequenceSyncState)
-                  : item.id === "layout"
-                  ? `布局 ${currentLayout.label} · ${currentLayout.description}`
-                  : "删除图元";
+                item.id === "windowPreset"
+                  ? "窗宽预设"
+                  : item.id === "imageLayout"
+                      ? `图像布局 ${currentImageLayout.label} · ${currentImageLayout.description}`
+                      : item.id === "mprLayout"
+                        ? viewportMode === "mpr"
+                          ? `MPR ${currentMprLayout.label} · ${currentMprLayout.description}`
+                          : "MPR 已关闭"
+                        : item.id === "sequenceSync"
+                          ? sequenceSyncState.crossStudy &&
+                            crossStudyCalibrationCount > 0
+                            ? `${getViewportSequenceSyncStateLabel(sequenceSyncState)} · 已校准 ${crossStudyCalibrationCount} 对`
+                            : getViewportSequenceSyncStateLabel(
+                                sequenceSyncState,
+                              )
+                          : item.id === "layout"
+                            ? `布局 ${currentLayout.label} · ${currentLayout.description}`
+                            : "删除图元";
               const isToggled =
                 item.id === "sequenceSync" &&
                 hasEnabledViewportSequenceSync(sequenceSyncState);
@@ -799,22 +605,28 @@ export function ViewportToolbar({
                   key={item.id}
                   menu={menu}
                   trigger={["click"]}
-                  open={item.id === "sequenceSync" ? sequenceSyncMenuOpen : undefined}
+                  open={
+                    item.id === "sequenceSync"
+                      ? sequenceSyncMenuOpen
+                      : undefined
+                  }
                   onOpenChange={
                     item.id === "sequenceSync"
                       ? setSequenceSyncMenuOpen
                       : undefined
                   }
                   overlayClassName={
-                    item.id === "imageLayout"
-                      ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-image-layout"
-                      : item.id === "mprLayout"
-                        ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-mpr-layout"
-                      : item.id === "sequenceSync"
-                        ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
-                      : item.id === "layout"
-                        ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-layout"
-                      : undefined
+                    item.id === "windowPreset"
+                      ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
+                      : item.id === "imageLayout"
+                          ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-image-layout"
+                          : item.id === "mprLayout"
+                            ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-mpr-layout"
+                            : item.id === "sequenceSync"
+                              ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
+                              : item.id === "layout"
+                                ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-layout"
+                                : undefined
                   }
                   disabled={itemDisabled}
                 >
@@ -840,13 +652,39 @@ export function ViewportToolbar({
                     {count ? (
                       <span className="viewport-utility-count">{count}</span>
                     ) : null}
-                    <span className="viewport-menu-indicator" aria-hidden="true" />
+                    <span
+                      className="viewport-menu-indicator"
+                      aria-hidden="true"
+                    />
                   </button>
                 </Dropdown>
               );
             }
 
-            const isCurrentTool = item.kind === "tool" && activeTool === item.id;
+            if (item.kind === "viewAction") {
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="viewport-tool-button"
+                  data-testid={`viewport-view-action-${item.id}`}
+                  data-tool-id={item.id}
+                  data-tool-kind={item.kind}
+                  aria-label={item.label}
+                  title={item.label}
+                  disabled={itemDisabled}
+                  onClick={() => onViewAction(item.id)}
+                >
+                  <ViewportToolbarIcon
+                    className="viewport-toolbar-icon"
+                    name={getToolbarItemIconName(item, groupSelections)}
+                  />
+                </button>
+              );
+            }
+
+            const isCurrentTool =
+              item.kind === "tool" && activeTool === item.id;
             const isToggledAction =
               item.kind === "action" && item.id === "invert" && invertEnabled;
             const dataTestId = `viewport-tool-${item.id}`;
@@ -859,7 +697,9 @@ export function ViewportToolbar({
                 data-testid={dataTestId}
                 data-tool-id={item.id}
                 data-tool-kind={item.kind}
-                aria-pressed={item.kind === "tool" ? isCurrentTool : isToggledAction}
+                aria-pressed={
+                  item.kind === "tool" ? isCurrentTool : isToggledAction
+                }
                 aria-label={item.label}
                 title={item.label}
                 disabled={itemDisabled}
@@ -879,31 +719,7 @@ export function ViewportToolbar({
               </button>
             );
           })}
-          {overflowOptions.length ? (
-            <Dropdown
-              menu={overflowMenu}
-              trigger={["click"]}
-              overlayClassName="viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
-              disabled={disabled}
-            >
-              <button
-                type="button"
-                className="viewport-tool-overflow"
-                data-testid="viewport-tool-overflow"
-                aria-label="更多工具"
-                title="更多工具"
-                disabled={disabled}
-              >
-                <ViewportToolbarIcon
-                  className="viewport-toolbar-icon"
-                  name="overflow"
-                />
-                <span className="viewport-menu-indicator" aria-hidden="true" />
-              </button>
-            </Dropdown>
-          ) : null}
         </div>
-        <div className="viewport-toolbar-divider" aria-hidden="true" />
         <div className="viewport-toolbar-utilities">
           <button
             type="button"
