@@ -14,6 +14,12 @@ import {
   createPolylineMeasureTool,
   type PolylineMeasureToolClass,
 } from "@/lib/tools/polyline-measure-tool";
+import {
+  DIAMETER_CIRCLE_ROI_TOOL_NAME,
+  DIAMETER_ELLIPTICAL_ROI_TOOL_NAME,
+  createDiameterCircleRoiTool,
+  createDiameterEllipticalRoiTool,
+} from "@/lib/tools/diameter-roi-tools";
 
 const VIEWPORT_ANNOTATION_TOOL_STYLES = {
   global: {
@@ -263,6 +269,11 @@ export function registerCornerstoneViewportTools(
     core,
     tools,
   ) as PolylineMeasureToolClass;
+  const DiameterEllipticalRoiTool = createDiameterEllipticalRoiTool(
+    core,
+    tools,
+  );
+  const DiameterCircleRoiTool = createDiameterCircleRoiTool(core, tools);
   const toolClasses = [
     tools.StackScrollTool,
     tools.PanTool,
@@ -274,8 +285,8 @@ export function registerCornerstoneViewportTools(
     tools.PlanarFreehandROITool,
     PolylineMeasureTool,
     tools.RectangleROITool,
-    tools.EllipticalROITool,
-    tools.CircleROITool,
+    DiameterEllipticalRoiTool,
+    DiameterCircleRoiTool,
   ];
 
   for (const ToolClass of toolClasses) {
@@ -303,8 +314,8 @@ export function configureViewportToolGroup(
   toolGroup.addTool(tools.AngleTool.toolName);
   toolGroup.addTool(POLYLINE_MEASURE_TOOL_NAME);
   toolGroup.addTool(tools.RectangleROITool.toolName);
-  toolGroup.addTool(tools.EllipticalROITool.toolName);
-  toolGroup.addTool(tools.CircleROITool.toolName);
+  toolGroup.addTool(DIAMETER_ELLIPTICAL_ROI_TOOL_NAME);
+  toolGroup.addTool(DIAMETER_CIRCLE_ROI_TOOL_NAME);
   toolGroup.addToolInstance(
     FREEHAND_MEASURE_TOOL_NAME,
     tools.PlanarFreehandROITool.toolName,

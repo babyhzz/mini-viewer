@@ -1,3 +1,8 @@
+import {
+  DIAMETER_CIRCLE_ROI_TOOL_NAME,
+  DIAMETER_ELLIPTICAL_ROI_TOOL_NAME,
+} from "@/lib/tools/diameter-roi-tools";
+
 export type ViewportTool =
   | "select"
   | "pan"
@@ -236,21 +241,21 @@ const viewportToolDefinitions: Record<ViewportTool, ViewportToolDefinition> = {
     id: "ellipseRoi",
     label: "椭圆 ROI",
     shortLabel: "椭圆",
-    hint: "左键拖动绘制椭圆 ROI",
-    interactionHint: "左键拖动绘制椭圆 ROI · 滚轮翻页",
+    hint: "左键两点拖拽绘制椭圆 ROI",
+    interactionHint: "左键拖拽确定椭圆范围 · 滚轮翻页",
     createsAnnotation: true,
     toolbarGroupId: "roi",
-    cornerstoneToolName: "EllipticalROI",
+    cornerstoneToolName: DIAMETER_ELLIPTICAL_ROI_TOOL_NAME,
   },
   circleRoi: {
     id: "circleRoi",
     label: "圆形 ROI",
     shortLabel: "圆形",
-    hint: "左键拖动绘制圆形 ROI",
-    interactionHint: "左键拖动绘制圆形 ROI · 滚轮翻页",
+    hint: "左键两点拖拽按直径绘制圆形 ROI",
+    interactionHint: "左键拖拽确定圆的直径 · 滚轮翻页",
     createsAnnotation: true,
     toolbarGroupId: "roi",
-    cornerstoneToolName: "CircleROI",
+    cornerstoneToolName: DIAMETER_CIRCLE_ROI_TOOL_NAME,
   },
 };
 

@@ -1593,6 +1593,12 @@ test.describe("DICOM viewer smoke coverage", () => {
       "data-active-tool",
       "ellipseRoi",
     );
+    await page.mouse.move(startX + 20, startY + 24);
+    await page.mouse.down();
+    await page.mouse.move(endX + 36, endY + 30, { steps: 10 });
+    await page.mouse.up();
+
+    await expect(viewportStage).toHaveAttribute("data-annotation-total", "2");
 
     await roiMenuTrigger.click();
     await page.getByTestId("viewport-tool-group-roi-option-circleRoi").click();
@@ -1600,6 +1606,14 @@ test.describe("DICOM viewer smoke coverage", () => {
       "data-active-tool",
       "circleRoi",
     );
+    await page.mouse.move(stageBox!.x + stageBox!.width * 0.68, stageBox!.y + stageBox!.height * 0.58);
+    await page.mouse.down();
+    await page.mouse.move(stageBox!.x + stageBox!.width * 0.82, stageBox!.y + stageBox!.height * 0.76, {
+      steps: 10,
+    });
+    await page.mouse.up();
+
+    await expect(viewportStage).toHaveAttribute("data-annotation-total", "3");
   });
 
   test("annotation manager and list support selection, deletion, and clear-all", async ({
