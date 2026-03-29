@@ -13,4 +13,4 @@ test-results
 storage/*.sqlite
 storage/*.sqlite-shm
 storage/*.sqlite-wal
-dicom/
+/dicom

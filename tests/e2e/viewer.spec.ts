@@ -1138,6 +1138,7 @@ test.describe("DICOM viewer smoke coverage", () => {
     await waitForViewerReady(page);
 
     const viewportStage = page.getByTestId("viewport-stage");
+    const viewportScrollbar = page.getByTestId("viewport-scrollbar");
     const viewportCanvas = viewportStage.locator(".viewport-canvas");
     const stageBox = await viewportStage.boundingBox();
     const frameCount = Number(
@@ -1173,6 +1174,7 @@ test.describe("DICOM viewer smoke coverage", () => {
         "data-select-scroll-active",
         "true",
       );
+      await expect(viewportScrollbar).not.toHaveAttribute("data-frame-index", "1");
       await page.mouse.up();
 
       await expect(viewportStage).toHaveAttribute(

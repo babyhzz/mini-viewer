@@ -921,6 +921,7 @@ export function StackViewport({
   const transientRecoveryAttemptsRef = useRef(0);
   const [status, setStatus] = useState<ViewportStatus>("idle");
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [scrollIndicatorFrameIndex, setScrollIndicatorFrameIndex] = useState(0);
   const [panOffset, setPanOffset] = useState(DEFAULT_PAN_OFFSET);
   const [viewZoom, setViewZoom] = useState(DEFAULT_VIEW_ZOOM);
   const [viewRotation, setViewRotation] = useState(DEFAULT_VIEW_ROTATION);
@@ -1022,6 +1023,15 @@ export function StackViewport({
   const imageLayoutStartFrameIndex = totalImages
     ? clampNumber(currentImageIndex || 1, 1, maxImageLayoutStartFrameIndex)
     : 0;
+  const scrollIndicatorBaseFrameIndex =
+    scrollIndicatorFrameIndex || currentImageIndex || 1;
+  const scrollIndicatorStartFrameIndex = totalImages
+    ? clampNumber(
+        scrollIndicatorBaseFrameIndex,
+        1,
+        maxImageLayoutStartFrameIndex,
+      )
+    : 0;
   const imageLayoutEndFrameIndex = imageLayoutStartFrameIndex
     ? Math.min(totalImages, imageLayoutStartFrameIndex + visibleImageCount - 1)
     : 0;
@@ -1062,8 +1072,8 @@ export function StackViewport({
       ? Math.min(100, Math.max(12, (visibleImageCount / totalImages) * 100))
       : 0;
   const scrollProgressRatio =
-    totalImages > visibleImageCount && imageLayoutStartFrameIndex > 0
-      ? (imageLayoutStartFrameIndex - 1) / (totalImages - visibleImageCount)
+    totalImages > visibleImageCount && scrollIndicatorStartFrameIndex > 0
+      ? (scrollIndicatorStartFrameIndex - 1) / (totalImages - visibleImageCount)
       : 0;
   const scrollThumbOffsetPercent =
     totalImages > visibleImageCount
@@ -1328,7 +1338,14 @@ export function StackViewport({
 
       pendingNavigationSourceRef.current = null;
       setCurrentImageIndex(nextFrameIndex);
+      setScrollIndicatorFrameIndex(nextFrameIndex);
       emitRuntimeState("ready", nextFrameIndex, changeSource);
+    };
+    const handleStackViewportScroll = (event: Event) => {
+      const customEvent = event as CustomEvent<{ newImageIdIndex: number }>;
+      const nextFrameIndex = customEvent.detail.newImageIdIndex + 1;
+
+      setScrollIndicatorFrameIndex(nextFrameIndex);
     };
     const handleCameraModified = () => {
       if (!viewportRef.current) {
@@ -1469,6 +1486,10 @@ export function StackViewport({
           handleStackNewImage as EventListener,
         );
         cleanupElement.addEventListener(
+          core.Enums.Events.STACK_VIEWPORT_SCROLL,
+          handleStackViewportScroll as EventListener,
+        );
+        cleanupElement.addEventListener(
           core.Enums.Events.VOI_MODIFIED,
           handleVoiModified as EventListener,
         );
@@ -1503,6 +1524,10 @@ export function StackViewport({
         handleStackNewImage as EventListener,
       );
       cleanupElement?.removeEventListener(
+        cleanupCore?.Enums.Events.STACK_VIEWPORT_SCROLL ?? "",
+        handleStackViewportScroll as EventListener,
+      );
+      cleanupElement?.removeEventListener(
         cleanupCore?.Enums.Events.VOI_MODIFIED ?? "",
         handleVoiModified as EventListener,
       );
@@ -1535,6 +1560,7 @@ export function StackViewport({
       setPanOffset(DEFAULT_PAN_OFFSET);
       setAnnotationCounts(EMPTY_ANNOTATION_COUNTS);
       setSelectedAnnotationCount(0);
+      setScrollIndicatorFrameIndex(0);
       setViewZoom(DEFAULT_VIEW_ZOOM);
       setViewRotation(DEFAULT_VIEW_ROTATION);
       setViewFlipHorizontal(DEFAULT_VIEW_FLIP);
@@ -1813,6 +1839,7 @@ export function StackViewport({
         disableStackContextPrefetchSafely(currentTools, currentElement);
         setStatus("idle");
         setCurrentImageIndex(0);
+        setScrollIndicatorFrameIndex(0);
         setPanOffset(DEFAULT_PAN_OFFSET);
         setViewZoom(DEFAULT_VIEW_ZOOM);
         setViewRotation(DEFAULT_VIEW_ROTATION);
@@ -1837,6 +1864,7 @@ export function StackViewport({
 
       setStatus("loading");
       setCurrentImageIndex(1);
+      setScrollIndicatorFrameIndex(1);
       setPanOffset(DEFAULT_PAN_OFFSET);
       setViewZoom(DEFAULT_VIEW_ZOOM);
       setViewRotation(DEFAULT_VIEW_ROTATION);
@@ -1898,6 +1926,7 @@ export function StackViewport({
           const nextFrameIndex = currentViewport.getCurrentImageIdIndex() + 1;
 
           setCurrentImageIndex(nextFrameIndex);
+          setScrollIndicatorFrameIndex(nextFrameIndex);
           if (pendingNavigationSourceRef.current === "load") {
             pendingNavigationSourceRef.current = null;
             emitRuntimeState("ready", nextFrameIndex, "load");
@@ -1982,8 +2011,10 @@ export function StackViewport({
     }
 
     pendingNavigationSourceRef.current = "sync";
+    setScrollIndicatorFrameIndex(nextFrameIndex);
     void viewport.setImageIdIndex(nextFrameIndex - 1).catch((error) => {
       pendingNavigationSourceRef.current = null;
+      setScrollIndicatorFrameIndex(currentImageIndex);
       console.error("Failed to apply sequence sync command", error);
     });
   }, [
@@ -2094,7 +2125,7 @@ export function StackViewport({
           className="viewport-stack-scrollbar"
           data-testid="viewport-scrollbar"
           data-single-frame={String(isSingleFrameSeries)}
-          data-frame-index={imageLayoutStartFrameIndex || currentImageIndex}
+          data-frame-index={scrollIndicatorStartFrameIndex || currentImageIndex}
           data-frame-count={totalImages}
           aria-hidden="true"
         >
