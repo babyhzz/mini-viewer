@@ -29,6 +29,10 @@ import {
   type ViewportMprLayoutId,
 } from "@/lib/viewports/mpr-layouts";
 import {
+  DEFAULT_VIEWPORT_MPR_SLAB_STATE,
+  type ViewportMprSlabState,
+} from "@/lib/viewports/mpr-slab";
+import {
   DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE,
   type CrossStudyCalibration,
   type StackViewportPresentationState,
@@ -37,6 +41,8 @@ import {
   type ViewportSequenceSyncCommand,
   type ViewportSequenceSyncState,
 } from "@/lib/viewports/sequence-sync";
+import type { StackViewportReferenceLineState } from "@/lib/viewports/reference-lines";
+import type { ViewportMprCrosshairSyncCommand } from "@/lib/viewports/mpr-crosshairs";
 import type { KeyImageEntry } from "@/lib/viewports/key-images";
 import type { ViewportStackNavigationCommand } from "@/lib/viewports/stack-navigation";
 import type { ViewportViewCommand } from "@/lib/viewports/view-commands";
@@ -57,6 +63,7 @@ export interface ViewerSessionState {
   viewportLayoutId: ViewportLayoutId;
   maximizedViewportId: string | null;
   selectedViewportId: string;
+  referenceLinesEnabled: boolean;
   viewportSeriesAssignments: Record<string, string | null>;
   viewportInvertEnabled: Record<string, boolean>;
   viewportToolGroupSelections: ViewportToolGroupSelections;
@@ -66,11 +73,20 @@ export interface ViewerSessionState {
   viewportImageLayoutIdById: Record<string, ViewportImageLayoutId>;
   viewportModeById: Record<string, ViewportMode>;
   viewportMprLayoutIdById: Record<string, ViewportMprLayoutId>;
+  viewportMprSlabStateById: Record<string, ViewportMprSlabState>;
   viewportCellSelectionById: Record<string, ViewportCellSelection>;
   viewportCineStateById: Record<string, ViewportCineState>;
   viewportKeyImagesBySeriesKey: Record<string, KeyImageEntry[]>;
   viewportSequenceSyncStateById: Record<string, ViewportSequenceSyncState>;
   stackViewportRuntimeStateById: Record<string, StackViewportRuntimeState | null>;
+  stackViewportReferenceLineStateById: Record<
+    string,
+    StackViewportReferenceLineState | null
+  >;
+  mprViewportReferenceLineStateById: Record<
+    string,
+    StackViewportReferenceLineState | null
+  >;
   stackViewportPresentationStateById: Record<
     string,
     StackViewportPresentationState | null
@@ -87,6 +103,10 @@ export interface ViewerSessionState {
     string,
     ViewportPresentationSyncCommand | null
   >;
+  viewportMprCrosshairSyncCommandById: Record<
+    string,
+    ViewportMprCrosshairSyncCommand | null
+  >;
   crossStudyCalibrationByPairKey: Record<string, CrossStudyCalibration>;
   manualSequenceSyncRequest: ManualSequenceSyncRequest | null;
   annotationListOpen: boolean;
@@ -101,6 +121,7 @@ interface ViewerSessionActions {
   setViewportLayoutId: (updater: StateUpdater<ViewportLayoutId>) => void;
   setMaximizedViewportId: (updater: StateUpdater<string | null>) => void;
   setSelectedViewportId: (updater: StateUpdater<string>) => void;
+  setReferenceLinesEnabled: (updater: StateUpdater<boolean>) => void;
   setViewportSeriesAssignments: (
     updater: StateUpdater<Record<string, string | null>>,
   ) => void;
@@ -126,6 +147,9 @@ interface ViewerSessionActions {
   setViewportMprLayoutIdById: (
     updater: StateUpdater<Record<string, ViewportMprLayoutId>>,
   ) => void;
+  setViewportMprSlabStateById: (
+    updater: StateUpdater<Record<string, ViewportMprSlabState>>,
+  ) => void;
   setViewportCellSelectionById: (
     updater: StateUpdater<Record<string, ViewportCellSelection>>,
   ) => void;
@@ -141,6 +165,12 @@ interface ViewerSessionActions {
   setStackViewportRuntimeStateById: (
     updater: StateUpdater<Record<string, StackViewportRuntimeState | null>>,
   ) => void;
+  setStackViewportReferenceLineStateById: (
+    updater: StateUpdater<Record<string, StackViewportReferenceLineState | null>>,
+  ) => void;
+  setMprViewportReferenceLineStateById: (
+    updater: StateUpdater<Record<string, StackViewportReferenceLineState | null>>,
+  ) => void;
   setStackViewportPresentationStateById: (
     updater: StateUpdater<Record<string, StackViewportPresentationState | null>>,
   ) => void;
@@ -152,6 +182,9 @@ interface ViewerSessionActions {
   ) => void;
   setViewportPresentationSyncCommandById: (
     updater: StateUpdater<Record<string, ViewportPresentationSyncCommand | null>>,
+  ) => void;
+  setViewportMprCrosshairSyncCommandById: (
+    updater: StateUpdater<Record<string, ViewportMprCrosshairSyncCommand | null>>,
   ) => void;
   setCrossStudyCalibrationByPairKey: (
     updater: StateUpdater<Record<string, CrossStudyCalibration>>,
@@ -185,6 +218,7 @@ function createInitialViewerSessionState(): ViewerSessionState {
     viewportLayoutId: DEFAULT_VIEWPORT_LAYOUT_ID,
     maximizedViewportId: null,
     selectedViewportId: "viewport-1",
+    referenceLinesEnabled: false,
     viewportSeriesAssignments: {},
     viewportInvertEnabled: {},
     viewportToolGroupSelections: createDefaultViewportToolGroupSelections(),
@@ -194,15 +228,19 @@ function createInitialViewerSessionState(): ViewerSessionState {
     viewportImageLayoutIdById: {},
     viewportModeById: {},
     viewportMprLayoutIdById: {},
+    viewportMprSlabStateById: {},
     viewportCellSelectionById: {},
     viewportCineStateById: {},
     viewportKeyImagesBySeriesKey: {},
     viewportSequenceSyncStateById: {},
     stackViewportRuntimeStateById: {},
+    stackViewportReferenceLineStateById: {},
+    mprViewportReferenceLineStateById: {},
     stackViewportPresentationStateById: {},
     viewportStackNavigationCommandById: {},
     viewportSequenceSyncCommandById: {},
     viewportPresentationSyncCommandById: {},
+    viewportMprCrosshairSyncCommandById: {},
     crossStudyCalibrationByPairKey: {},
     manualSequenceSyncRequest: null,
     annotationListOpen: false,
@@ -234,6 +272,7 @@ export const useViewerSessionStore = create<ViewerSessionStore>((set) => ({
   setViewportLayoutId: createStateSetter("viewportLayoutId", set),
   setMaximizedViewportId: createStateSetter("maximizedViewportId", set),
   setSelectedViewportId: createStateSetter("selectedViewportId", set),
+  setReferenceLinesEnabled: createStateSetter("referenceLinesEnabled", set),
   setViewportSeriesAssignments: createStateSetter(
     "viewportSeriesAssignments",
     set,
@@ -255,6 +294,7 @@ export const useViewerSessionStore = create<ViewerSessionStore>((set) => ({
   ),
   setViewportModeById: createStateSetter("viewportModeById", set),
   setViewportMprLayoutIdById: createStateSetter("viewportMprLayoutIdById", set),
+  setViewportMprSlabStateById: createStateSetter("viewportMprSlabStateById", set),
   setViewportCellSelectionById: createStateSetter(
     "viewportCellSelectionById",
     set,
@@ -272,6 +312,14 @@ export const useViewerSessionStore = create<ViewerSessionStore>((set) => ({
     "stackViewportRuntimeStateById",
     set,
   ),
+  setStackViewportReferenceLineStateById: createStateSetter(
+    "stackViewportReferenceLineStateById",
+    set,
+  ),
+  setMprViewportReferenceLineStateById: createStateSetter(
+    "mprViewportReferenceLineStateById",
+    set,
+  ),
   setStackViewportPresentationStateById: createStateSetter(
     "stackViewportPresentationStateById",
     set,
@@ -286,6 +334,10 @@ export const useViewerSessionStore = create<ViewerSessionStore>((set) => ({
   ),
   setViewportPresentationSyncCommandById: createStateSetter(
     "viewportPresentationSyncCommandById",
+    set,
+  ),
+  setViewportMprCrosshairSyncCommandById: createStateSetter(
+    "viewportMprCrosshairSyncCommandById",
     set,
   ),
   setCrossStudyCalibrationByPairKey: createStateSetter(
@@ -324,5 +376,6 @@ export const VIEWER_SESSION_DEFAULTS = {
   imageLayoutId: DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID,
   mode: DEFAULT_VIEWPORT_MODE,
   mprLayoutId: DEFAULT_VIEWPORT_MPR_LAYOUT_ID,
+  mprSlabState: DEFAULT_VIEWPORT_MPR_SLAB_STATE,
   sequenceSyncState: DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE,
 };

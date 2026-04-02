@@ -3,6 +3,7 @@ import type {
   OverlayFontWeight,
   OverlayTagKey,
   OverlayTextStyle,
+  ViewerMprProjectionSettings,
   ViewerSettings,
   ViewportCorner,
   ViewportOverlaySettings,
@@ -11,6 +12,11 @@ import {
   createDefaultToolbarShortcutSettings,
   normalizeToolbarShortcutSettings,
 } from "@/lib/settings/shortcuts";
+import {
+  DEFAULT_VIEWPORT_MPR_SLAB_STATE,
+  normalizeViewportMprSlabState,
+  type ViewportMprSlabState,
+} from "@/lib/viewports/mpr-slab";
 
 export interface OverlayTagDefinition {
   key: OverlayTagKey;
@@ -211,7 +217,28 @@ export function createDefaultViewerSettings(): ViewerSettings {
     schemaVersion: 1,
     viewportOverlay: createDefaultViewportOverlaySettings(),
     toolbarShortcuts: createDefaultToolbarShortcutSettings(),
+    mprProjection: createDefaultViewerMprProjectionSettings(),
   };
+}
+
+export function createDefaultViewerMprProjectionSettings(): ViewerMprProjectionSettings {
+  return {
+    schemaVersion: 1,
+    defaultSlabMode: DEFAULT_VIEWPORT_MPR_SLAB_STATE.mode,
+    defaultSlabThickness: DEFAULT_VIEWPORT_MPR_SLAB_STATE.thickness,
+  };
+}
+
+export function getViewerSettingsDefaultMprSlabState(
+  settings: ViewerSettings,
+): ViewportMprSlabState {
+  return normalizeViewportMprSlabState(
+    {
+      mode: settings.mprProjection.defaultSlabMode,
+      thickness: settings.mprProjection.defaultSlabThickness,
+    },
+    DEFAULT_VIEWPORT_MPR_SLAB_STATE,
+  );
 }
 
 export function cloneViewerSettings(settings: ViewerSettings): ViewerSettings {
@@ -338,10 +365,21 @@ export function normalizeViewerSettings(value: unknown): ViewerSettings {
     settings?.viewportOverlay && typeof settings.viewportOverlay === "object"
       ? (settings.viewportOverlay as Partial<ViewportOverlaySettings>)
       : undefined;
+  const mprProjection =
+    settings?.mprProjection && typeof settings.mprProjection === "object"
+      ? (settings.mprProjection as Partial<ViewerMprProjectionSettings>)
+      : undefined;
   const corners =
     viewportOverlay?.corners && typeof viewportOverlay.corners === "object"
       ? viewportOverlay.corners
       : undefined;
+  const defaultMprSlabState = normalizeViewportMprSlabState(
+    {
+      mode: mprProjection?.defaultSlabMode,
+      thickness: mprProjection?.defaultSlabThickness,
+    },
+    getViewerSettingsDefaultMprSlabState(defaults),
+  );
 
   return {
     schemaVersion: 1,
@@ -369,6 +407,11 @@ export function normalizeViewerSettings(value: unknown): ViewerSettings {
     toolbarShortcuts: normalizeToolbarShortcutSettings(
       settings?.toolbarShortcuts,
     ),
+    mprProjection: {
+      schemaVersion: 1,
+      defaultSlabMode: defaultMprSlabState.mode,
+      defaultSlabThickness: defaultMprSlabState.thickness,
+    },
   };
 }
 

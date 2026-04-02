@@ -35,6 +35,7 @@ import {
   TOOLBAR_SHORTCUT_CATEGORY_LABELS,
   TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS,
 } from "@/lib/settings/shortcuts";
+import { getViewportMprSlabModeDefinitions } from "@/lib/viewports/mpr-slab";
 import type {
   OverlayCornerItemConfig,
   ToolbarShortcutBinding,
@@ -56,6 +57,7 @@ interface EditingTarget {
 }
 
 const OVERLAY_SECTION_ID = "overlay";
+const MPR_PROJECTION_SECTION_ID = "mprProjection";
 const SHORTCUTS_SECTION_ID = "shortcuts";
 type ShortcutCategoryId = keyof typeof TOOLBAR_SHORTCUT_CATEGORY_LABELS;
 type ShortcutFilter = "all" | "customized" | "unassigned";
@@ -99,6 +101,16 @@ function replaceToolbarShortcuts(
       ...settings.toolbarShortcuts,
       bindings,
     },
+  };
+}
+
+function replaceMprProjectionSettings(
+  settings: ViewerSettings,
+  mprProjection: ViewerSettings["mprProjection"],
+) {
+  return {
+    ...settings,
+    mprProjection,
   };
 }
 
@@ -163,6 +175,14 @@ export function ViewerSettingsDrawer({
       }),
     );
   }, []);
+  const mprSlabModeOptions = useMemo(
+    () =>
+      getViewportMprSlabModeDefinitions().map((definition) => ({
+        label: definition.label,
+        value: definition.id,
+      })),
+    [],
+  );
   const [draftSettings, setDraftSettings] = useState<ViewerSettings>(() =>
     cloneViewerSettings(settings),
   );
@@ -554,7 +574,7 @@ export function ViewerSettingsDrawer({
             <aside className="viewer-settings-nav">
               <div className="viewer-settings-nav-header">
                 <h3>快捷导航</h3>
-                <p>按配置主题拆分导航，当前支持四角信息和工具栏快捷键。</p>
+                <p>按配置主题拆分导航，当前支持四角信息、MPR 投影和工具栏快捷键。</p>
               </div>
               <div className="viewer-settings-nav-list">
                 <button
@@ -563,6 +583,13 @@ export function ViewerSettingsDrawer({
                   onClick={() => handleScrollToSection(OVERLAY_SECTION_ID)}
                 >
                   四角信息
+                </button>
+                <button
+                  type="button"
+                  className="viewer-settings-nav-button"
+                  onClick={() => handleScrollToSection(MPR_PROJECTION_SECTION_ID)}
+                >
+                  MPR 投影
                 </button>
                 <button
                   type="button"
@@ -720,6 +747,106 @@ export function ViewerSettingsDrawer({
                     );
                   })}
                 </div>
+              </section>
+
+              <section
+                ref={(element) => {
+                  sectionRefs.current[MPR_PROJECTION_SECTION_ID] = element;
+                }}
+                className="viewer-settings-section"
+                data-testid="viewer-settings-mpr-projection-section"
+              >
+                <div className="viewer-settings-section-head">
+                  <div>
+                    <div className="viewer-settings-section-kicker">
+                      MPR Projection Defaults
+                    </div>
+                    <h2>MPR 投影</h2>
+                    <p>
+                      配置默认的 MPR 投影模式和厚度。新开的 MPR
+                      视口会优先使用这里的默认值，当前视口执行“重置投影”也会回到这里。
+                    </p>
+                  </div>
+                </div>
+
+                <div className="viewer-settings-summary-row">
+                  <Tag className="viewer-settings-summary-tag">
+                    保存后立即生效
+                  </Tag>
+                  <Tag className="viewer-settings-summary-tag">
+                    厚度单位为 mm
+                  </Tag>
+                  <Tag className="viewer-settings-summary-tag">
+                    刷新后保留
+                  </Tag>
+                </div>
+
+                <Card size="small" className="viewer-settings-corner-card">
+                  <div className="viewer-settings-corner-head">
+                    <div>
+                      <div className="viewer-settings-corner-title">
+                        默认投影参数
+                      </div>
+                      <div className="viewer-settings-corner-subtitle">
+                        用于初始化 MPR 视口和重置投影
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="viewer-settings-editor-grid"
+                    data-testid="viewer-settings-mpr-projection-controls"
+                  >
+                    <label className="viewer-settings-field">
+                      <span>默认模式</span>
+                      <Segmented
+                        options={mprSlabModeOptions}
+                        value={draftSettings.mprProjection.defaultSlabMode}
+                        data-testid="viewer-settings-mpr-projection-mode"
+                        onChange={(value) => {
+                          setDraftSettings((currentSettings) =>
+                            replaceMprProjectionSettings(currentSettings, {
+                              ...currentSettings.mprProjection,
+                              defaultSlabMode:
+                                value as ViewerSettings["mprProjection"]["defaultSlabMode"],
+                            }),
+                          );
+                        }}
+                      />
+                    </label>
+
+                    <label className="viewer-settings-field">
+                      <span>默认厚度</span>
+                      <InputNumber
+                        min={0.1}
+                        max={200}
+                        step={0.5}
+                        precision={1}
+                        addonAfter="mm"
+                        value={draftSettings.mprProjection.defaultSlabThickness}
+                        data-testid="viewer-settings-mpr-projection-thickness"
+                        onChange={(value) => {
+                          if (
+                            typeof value !== "number" ||
+                            !Number.isFinite(value)
+                          ) {
+                            return;
+                          }
+
+                          setDraftSettings((currentSettings) =>
+                            replaceMprProjectionSettings(currentSettings, {
+                              ...currentSettings.mprProjection,
+                              defaultSlabThickness: value,
+                            }),
+                          );
+                        }}
+                      />
+                      <small className="viewer-settings-field-note">
+                        建议在 1 - 40 mm 范围内配置，支持 0.1 mm 步进。
+                      </small>
+                    </label>
+                  </div>
+                </Card>
               </section>
 
               <section

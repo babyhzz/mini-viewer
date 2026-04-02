@@ -11,7 +11,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   timeout: 60_000,
-  workers: 2,
+  workers: 1,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: BASE_URL,
@@ -33,7 +33,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         launchOptions: {
-          args: ["--use-gl=swiftshader"],
+          args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
         },
       },
     },

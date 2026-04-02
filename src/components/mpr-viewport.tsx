@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Spin } from "antd";
 
 import { AppIcon } from "@/components/app-icon";
@@ -36,6 +36,23 @@ import {
   type ViewportMprLayoutId,
   type ViewportMprPaneId,
 } from "@/lib/viewports/mpr-layouts";
+import {
+  getEffectiveViewportMprSlabThickness,
+  getViewportMprSlabBlendMode,
+  type ViewportMprSlabState,
+} from "@/lib/viewports/mpr-slab";
+import type { ViewportMprCrosshairSyncCommand } from "@/lib/viewports/mpr-crosshairs";
+import {
+  clonePoint3,
+  clonePoint3Quad,
+  computeViewportReferenceLineSegment,
+  getPoint3QuadCenter,
+  isFinitePoint3,
+  isFinitePoint3Quad,
+  type Point3,
+  type StackViewportReferenceLineState,
+  type ViewportReferenceLineSegment,
+} from "@/lib/viewports/reference-lines";
 import type { DicomImageNode, DicomSeriesNode, DicomStudyNode } from "@/types/dicom";
 import type { ViewportOverlaySettings } from "@/types/settings";
 
@@ -48,8 +65,14 @@ interface MprViewportProps {
   series: DicomSeriesNode | null;
   activeTool: ViewportTool;
   mprLayoutId: ViewportMprLayoutId;
+  mprSlabState: ViewportMprSlabState;
   invertEnabled: boolean;
   overlaySettings: ViewportOverlaySettings;
+  referenceLinesEnabled: boolean;
+  isReferenceLineSource?: boolean;
+  crosshairSyncCommand?: ViewportMprCrosshairSyncCommand | null;
+  referenceLineSourceViewportId?: string | null;
+  referenceLineSourceState?: StackViewportReferenceLineState | null;
   annotationCommand?: ViewportAnnotationCommand | null;
   dicomTagDialogOpen?: boolean;
   isSelected: boolean;
@@ -57,6 +80,9 @@ interface MprViewportProps {
   onSelect: (viewportKey: string) => void;
   onToggleMaximize?: (viewportKey: string) => void;
   onAnnotationsChange?: (state: ViewportAnnotationsState) => void;
+  onReferenceLineStateChange?: (
+    state: StackViewportReferenceLineState | null,
+  ) => void;
 }
 
 interface MprPaneSnapshot {
@@ -73,6 +99,17 @@ interface WheelScrollState {
 
 interface CornerstoneCrosshairsToolLike {
   computeToolCenter?: () => void;
+  setToolCenter?: (toolCenter: Point3, suppressEvents?: boolean) => void;
+  toolCenter?: unknown;
+}
+
+interface CornerstoneVolumeViewportLike {
+  setBlendMode: (
+    blendMode: import("@cornerstonejs/core").Enums.BlendModes,
+  ) => void;
+  setSlabThickness?: (slabThickness: number) => void;
+  resetSlabThickness?: () => void;
+  render: () => void;
 }
 
 const WHEEL_DELTA_THRESHOLD = 48;
@@ -91,6 +128,23 @@ const EMPTY_MPR_PANE_SNAPSHOT: MprPaneSnapshot = {
   frameCount: 0,
   image: null,
 };
+
+function applyViewportMprSlabState(
+  viewport: CornerstoneVolumeViewportLike,
+  coreEnums: typeof import("@cornerstonejs/core").Enums,
+  mprSlabState: ViewportMprSlabState,
+) {
+  viewport.setBlendMode(getViewportMprSlabBlendMode(coreEnums, mprSlabState.mode));
+
+  if (mprSlabState.mode === "none") {
+    viewport.resetSlabThickness?.();
+    return;
+  }
+
+  viewport.setSlabThickness?.(
+    getEffectiveViewportMprSlabThickness(mprSlabState),
+  );
+}
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -226,6 +280,50 @@ function getMprPaneViewport(
   ) as import("@cornerstonejs/core").Types.IVolumeViewport | null;
 }
 
+function getMprCrosshairsTool(
+  tools: typeof import("@cornerstonejs/tools") | null,
+  toolGroupId: string | null,
+) {
+  if (!tools || !toolGroupId) {
+    return null;
+  }
+
+  const toolGroup = tools.ToolGroupManager.getToolGroup(toolGroupId);
+
+  return (toolGroup?.getToolInstance(
+    MPR_CROSSHAIRS_TOOL_NAME,
+  ) as CornerstoneCrosshairsToolLike | undefined) ?? null;
+}
+
+function getMprCrosshairsToolCenterWorld(
+  tools: typeof import("@cornerstonejs/tools") | null,
+  toolGroupId: string | null,
+) {
+  const crosshairsTool = getMprCrosshairsTool(tools, toolGroupId);
+
+  crosshairsTool?.computeToolCenter?.();
+
+  return isFinitePoint3(crosshairsTool?.toolCenter)
+    ? clonePoint3(crosshairsTool.toolCenter)
+    : null;
+}
+
+function arePoint3Close(
+  left: Point3 | null | undefined,
+  right: Point3 | null | undefined,
+  tolerance = 1e-3,
+) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    Math.abs(left[0] - right[0]) <= tolerance &&
+    Math.abs(left[1] - right[1]) <= tolerance &&
+    Math.abs(left[2] - right[2]) <= tolerance
+  );
+}
+
 function buildMprPaneSnapshot(
   core: typeof import("@cornerstonejs/core"),
   renderingEngineId: string,
@@ -269,8 +367,14 @@ export function MprViewport({
   series,
   activeTool,
   mprLayoutId,
+  mprSlabState,
   invertEnabled,
   overlaySettings,
+  referenceLinesEnabled,
+  isReferenceLineSource = false,
+  crosshairSyncCommand = null,
+  referenceLineSourceViewportId = null,
+  referenceLineSourceState = null,
   annotationCommand,
   dicomTagDialogOpen = false,
   isSelected,
@@ -278,6 +382,7 @@ export function MprViewport({
   onSelect,
   onToggleMaximize,
   onAnnotationsChange,
+  onReferenceLineStateChange,
 }: MprViewportProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const paneElementRefs = useRef<Record<ViewportMprPaneId, HTMLDivElement | null>>({
@@ -289,6 +394,14 @@ export function MprViewport({
   const toolsRef = useRef<typeof import("@cornerstonejs/tools") | null>(null);
   const toolGroupIdRef = useRef<string | null>(null);
   const volumeIdRef = useRef<string | null>(null);
+  const syncReferenceLineSegmentsRef = useRef<() => void>(() => undefined);
+  const onReferenceLineStateChangeRef = useRef(onReferenceLineStateChange);
+  const emitReferenceLineStateRef = useRef<
+    (paneIdOverride?: ViewportMprPaneId) => void
+  >(() => undefined);
+  const activePaneIdRef = useRef<ViewportMprPaneId>("axial");
+  const referenceLineChangeTokenRef = useRef(0);
+  const processedCrosshairSyncCommandIdRef = useRef(0);
   const paneViewportIdsRef = useRef<Record<ViewportMprPaneId, string>>({
     axial: `dicom-mpr-${viewportKey}-axial`,
     coronal: `dicom-mpr-${viewportKey}-coronal`,
@@ -302,12 +415,18 @@ export function MprViewport({
   const onAnnotationsChangeRef = useRef(onAnnotationsChange);
   const activeToolRef = useRef<ViewportTool>(activeTool);
   const invertEnabledRef = useRef(invertEnabled);
+  const mprSlabStateRef = useRef(mprSlabState);
   const transientRecoveryAttemptsRef = useRef(0);
   const [status, setStatus] = useState<ViewportStatus>("idle");
+  const [activePaneId, setActivePaneId] = useState<ViewportMprPaneId>("axial");
+  const [appliedCrosshairSyncCommandId, setAppliedCrosshairSyncCommandId] =
+    useState(0);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [viewportRuntimeReady, setViewportRuntimeReady] = useState(false);
   const [viewportRuntimeSeed, setViewportRuntimeSeed] = useState(0);
   const [paneSnapshots, setPaneSnapshots] = useState(createEmptyMprPaneSnapshots);
+  const [referenceLineSegmentByPaneId, setReferenceLineSegmentByPaneId] =
+    useState<Partial<Record<ViewportMprPaneId, ViewportReferenceLineSegment | null>>>({});
 
   const renderingEngineId = getSharedCornerstoneRenderingEngineId();
   const toolGroupId = `dicom-mpr-tools-${viewportKey}`;
@@ -315,12 +434,239 @@ export function MprViewport({
   const effectiveTool = isViewportToolSupportedInMpr(activeTool)
     ? activeTool
     : "select";
+  const mprSlabMode = mprSlabState.mode;
+  const mprSlabThickness = mprSlabState.thickness;
   const primaryPaneSnapshot = paneSnapshots[mprLayoutDefinition.panes[0].id];
   const paneElementsReady = mprLayoutDefinition.panes.every(
     (pane) => paneElementRefs.current[pane.id],
   );
   const containerReady =
     viewportSize.width > 0 && viewportSize.height > 0 && paneElementsReady;
+  const syncReferenceLineSegments = useCallback(() => {
+    if (
+      !referenceLinesEnabled ||
+      !referenceLineSourceViewportId ||
+      referenceLineSourceViewportId === viewportKey ||
+      !viewportRuntimeReady ||
+      !containerReady
+    ) {
+      setReferenceLineSegmentByPaneId((previous) =>
+        Object.keys(previous).length ? {} : previous,
+      );
+      return;
+    }
+
+    const core = coreRef.current;
+
+    if (!core) {
+      return;
+    }
+
+    setReferenceLineSegmentByPaneId((previous) => {
+      let hasChanges = false;
+      const nextState: Partial<
+        Record<ViewportMprPaneId, ViewportReferenceLineSegment | null>
+      > = {};
+
+      for (const pane of mprLayoutDefinition.panes) {
+        const paneViewport = getMprPaneViewport(
+          core,
+          renderingEngineId,
+          paneViewportIdsRef.current[pane.id],
+        );
+        const nextSegment = paneViewport
+          ? computeViewportReferenceLineSegment(
+              referenceLineSourceState,
+              paneViewport,
+            )
+          : null;
+        const previousSegment = previous[pane.id] ?? null;
+
+        if (
+          previousSegment?.startCanvas[0] !== nextSegment?.startCanvas[0] ||
+          previousSegment?.startCanvas[1] !== nextSegment?.startCanvas[1] ||
+          previousSegment?.endCanvas[0] !== nextSegment?.endCanvas[0] ||
+          previousSegment?.endCanvas[1] !== nextSegment?.endCanvas[1]
+        ) {
+          hasChanges = true;
+        }
+
+        nextState[pane.id] = nextSegment;
+      }
+
+      return hasChanges ? nextState : previous;
+    });
+  }, [
+    containerReady,
+    mprLayoutDefinition.panes,
+    referenceLineSourceState,
+    referenceLineSourceViewportId,
+    referenceLinesEnabled,
+    renderingEngineId,
+    viewportKey,
+    viewportRuntimeReady,
+  ]);
+
+  useEffect(() => {
+    syncReferenceLineSegmentsRef.current = syncReferenceLineSegments;
+  }, [syncReferenceLineSegments]);
+
+  useEffect(() => {
+    if (
+      !crosshairSyncCommand ||
+      crosshairSyncCommand.targetViewportKey !== viewportKey ||
+      crosshairSyncCommand.id <= processedCrosshairSyncCommandIdRef.current ||
+      !viewportRuntimeReady ||
+      !containerReady ||
+      status !== "ready"
+    ) {
+      return;
+    }
+
+    const core = coreRef.current;
+    const tools = toolsRef.current;
+    const currentToolGroupId = toolGroupIdRef.current;
+
+    if (!core || !tools || !currentToolGroupId) {
+      return;
+    }
+
+    const primaryPaneId = mprLayoutDefinition.panes[0]?.id;
+
+    if (!primaryPaneId) {
+      return;
+    }
+
+    const primaryPaneViewport = getMprPaneViewport(
+      core,
+      renderingEngineId,
+      paneViewportIdsRef.current[primaryPaneId],
+    );
+
+    if (!primaryPaneViewport) {
+      return;
+    }
+
+    const targetFrameOfReferenceUID =
+      primaryPaneViewport.getFrameOfReferenceUID() ?? null;
+
+    if (
+      targetFrameOfReferenceUID &&
+      crosshairSyncCommand.frameOfReferenceUID &&
+      targetFrameOfReferenceUID !== crosshairSyncCommand.frameOfReferenceUID
+    ) {
+      return;
+    }
+
+    const crosshairsTool = getMprCrosshairsTool(tools, currentToolGroupId);
+
+    if (!crosshairsTool?.setToolCenter) {
+      return;
+    }
+
+    const currentToolCenterWorld = getMprCrosshairsToolCenterWorld(
+      tools,
+      currentToolGroupId,
+    );
+
+    processedCrosshairSyncCommandIdRef.current = crosshairSyncCommand.id;
+    setAppliedCrosshairSyncCommandId(crosshairSyncCommand.id);
+
+    if (
+      arePoint3Close(
+        currentToolCenterWorld,
+        crosshairSyncCommand.referencePointWorld,
+      )
+    ) {
+      return;
+    }
+
+    crosshairsTool.setToolCenter(
+      clonePoint3(crosshairSyncCommand.referencePointWorld),
+    );
+  }, [
+    containerReady,
+    crosshairSyncCommand,
+    mprLayoutDefinition.panes,
+    renderingEngineId,
+    status,
+    viewportKey,
+    viewportRuntimeReady,
+  ]);
+
+  const emitReferenceLineState = useCallback(
+    (paneIdOverride?: ViewportMprPaneId) => {
+      if (!onReferenceLineStateChangeRef.current) {
+        return;
+      }
+
+      const core = coreRef.current;
+      const paneId = paneIdOverride ?? activePaneIdRef.current;
+      const paneViewportId = paneViewportIdsRef.current[paneId];
+      const paneViewport =
+        core != null
+          ? getMprPaneViewport(core, renderingEngineId, paneViewportId)
+          : null;
+      const imageCornersWorld =
+        paneViewport != null
+          ? core?.utilities.getViewportImageCornersInWorld(paneViewport)
+          : null;
+      const paneSnapshot =
+        core != null && paneViewport != null
+          ? buildMprPaneSnapshot(
+              core,
+              renderingEngineId,
+              paneViewportId,
+              volumeIdRef.current,
+              series,
+            )
+          : null;
+      const crosshairsToolCenterWorld = getMprCrosshairsToolCenterWorld(
+        toolsRef.current,
+        toolGroupIdRef.current,
+      );
+
+      if (!paneViewport || !isFinitePoint3Quad(imageCornersWorld)) {
+        onReferenceLineStateChangeRef.current(null);
+        return;
+      }
+
+      referenceLineChangeTokenRef.current += 1;
+      onReferenceLineStateChangeRef.current({
+        status: "ready",
+        frameOfReferenceUID:
+          paneSnapshot?.image?.frameOfReferenceUID ??
+          paneViewport.getFrameOfReferenceUID() ??
+          null,
+        imageCornersWorld: clonePoint3Quad(imageCornersWorld),
+        referencePointWorld:
+          crosshairsToolCenterWorld ?? getPoint3QuadCenter(imageCornersWorld),
+        sourcePaneId: paneId,
+        lastChangeToken: referenceLineChangeTokenRef.current,
+      });
+    },
+    [renderingEngineId, series],
+  );
+
+  useEffect(() => {
+    emitReferenceLineStateRef.current = emitReferenceLineState;
+  }, [emitReferenceLineState]);
+
+  useEffect(() => {
+    if (!viewportRuntimeReady || !containerReady) {
+      return;
+    }
+
+    emitReferenceLineState();
+  }, [
+    activePaneId,
+    containerReady,
+    emitReferenceLineState,
+    viewportRuntimeReady,
+    viewportSize.height,
+    viewportSize.width,
+  ]);
+
   const dicomTagSources = mprLayoutDefinition.panes.map((pane) => {
     const paneSnapshot = paneSnapshots[pane.id];
 
@@ -334,6 +680,14 @@ export function MprViewport({
   useEffect(() => {
     onAnnotationsChangeRef.current = onAnnotationsChange;
   }, [onAnnotationsChange]);
+
+  useEffect(() => {
+    onReferenceLineStateChangeRef.current = onReferenceLineStateChange;
+  }, [onReferenceLineStateChange]);
+
+  useEffect(() => {
+    activePaneIdRef.current = activePaneId;
+  }, [activePaneId]);
 
   useEffect(() => {
     activeToolRef.current = activeTool;
@@ -377,6 +731,49 @@ export function MprViewport({
       viewport.render();
     }
   }, [invertEnabled, mprLayoutDefinition.panes, renderingEngineId, viewportRuntimeReady]);
+
+  useEffect(() => {
+    const nextMprSlabState: ViewportMprSlabState = {
+      mode: mprSlabMode,
+      thickness: mprSlabThickness,
+    };
+    mprSlabStateRef.current = nextMprSlabState;
+
+    const core = coreRef.current;
+
+    if (!core || !viewportRuntimeReady) {
+      return;
+    }
+
+    const renderingEngine = core.getRenderingEngine(renderingEngineId);
+
+    if (!renderingEngine) {
+      return;
+    }
+
+    for (const pane of mprLayoutDefinition.panes) {
+      const viewport = renderingEngine.getViewport(
+        paneViewportIdsRef.current[pane.id],
+      ) as import("@cornerstonejs/core").Types.IVolumeViewport | undefined;
+
+      if (!viewport) {
+        continue;
+      }
+
+      applyViewportMprSlabState(viewport, core.Enums, nextMprSlabState);
+      viewport.render();
+    }
+  }, [
+    mprLayoutDefinition.panes,
+    mprSlabMode,
+    mprSlabThickness,
+    renderingEngineId,
+    viewportRuntimeReady,
+  ]);
+
+  useEffect(() => {
+    syncReferenceLineSegments();
+  }, [syncReferenceLineSegments]);
 
   useEffect(() => {
     const stageElement = stageRef.current;
@@ -542,8 +939,10 @@ export function MprViewport({
       toolGroupIdRef.current = null;
       volumeIdRef.current = null;
       transientRecoveryAttemptsRef.current = 0;
+      referenceLineChangeTokenRef.current = 0;
       setViewportRuntimeReady(false);
       setPaneSnapshots(createEmptyMprPaneSnapshots());
+      onReferenceLineStateChangeRef.current?.(null);
       onAnnotationsChangeRef.current?.({
         entries: [],
         selectedAnnotationUIDs: [],
@@ -565,6 +964,11 @@ export function MprViewport({
     }
 
     const currentCore = core;
+    const currentTools = toolsRef.current;
+
+    if (!currentTools) {
+      return;
+    }
 
     const wheelListeners: Array<{
       element: HTMLDivElement;
@@ -578,6 +982,7 @@ export function MprViewport({
       eventName: string;
       listener: (event: Event) => void;
     }> = [];
+    let crosshairCenterChangedListener: EventListener | null = null;
 
     const refreshPaneSnapshot = (paneId: ViewportMprPaneId, viewportId: string) => {
       setPaneSnapshots((previous) =>
@@ -633,6 +1038,11 @@ export function MprViewport({
 
         if (!volumeId || !viewport) {
           return;
+        }
+
+        if (activePaneIdRef.current !== pane.id) {
+          activePaneIdRef.current = pane.id;
+          setActivePaneId(pane.id);
         }
 
         event.preventDefault();
@@ -694,6 +1104,8 @@ export function MprViewport({
 
       const cameraListener: EventListener = () => {
         refreshAllPaneSnapshots();
+        syncReferenceLineSegments();
+        emitReferenceLineStateRef.current();
       };
 
       paneElement.addEventListener(
@@ -717,6 +1129,8 @@ export function MprViewport({
         }
 
         refreshPaneSnapshot(pane.id, viewportId);
+        syncReferenceLineSegments();
+        emitReferenceLineStateRef.current();
       };
 
       for (const eventName of [
@@ -730,6 +1144,25 @@ export function MprViewport({
         });
       }
     }
+
+    crosshairCenterChangedListener = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        toolGroupId?: string;
+      }>;
+
+      if (customEvent.detail.toolGroupId !== toolGroupId) {
+        return;
+      }
+
+      refreshAllPaneSnapshots();
+      syncReferenceLineSegments();
+      emitReferenceLineStateRef.current();
+    };
+
+    currentCore.eventTarget.addEventListener(
+      currentTools.Enums.Events.CROSSHAIR_TOOL_CENTER_CHANGED,
+      crosshairCenterChangedListener,
+    );
 
     return () => {
       for (const entry of wheelListeners) {
@@ -749,12 +1182,21 @@ export function MprViewport({
           entry.listener,
         );
       }
+
+      if (crosshairCenterChangedListener) {
+        currentCore.eventTarget.removeEventListener(
+          currentTools.Enums.Events.CROSSHAIR_TOOL_CENTER_CHANGED,
+          crosshairCenterChangedListener,
+        );
+      }
     };
   }, [
     containerReady,
     mprLayoutDefinition.panes,
     renderingEngineId,
     series,
+    syncReferenceLineSegments,
+    toolGroupId,
     viewportRuntimeReady,
   ]);
 
@@ -821,7 +1263,10 @@ export function MprViewport({
 
         volumeIdRef.current = null;
         transientRecoveryAttemptsRef.current = 0;
+        referenceLineChangeTokenRef.current = 0;
         setPaneSnapshots(createEmptyMprPaneSnapshots());
+        setReferenceLineSegmentByPaneId({});
+        onReferenceLineStateChangeRef.current?.(null);
         setStatus("idle");
         return;
       }
@@ -868,6 +1313,11 @@ export function MprViewport({
           }
 
           viewport.setProperties({ invert: invertEnabledRef.current });
+          applyViewportMprSlabState(
+            viewport,
+            currentCore.Enums,
+            mprSlabStateRef.current,
+          );
           viewport.resetCamera();
           viewport.render();
         }
@@ -876,14 +1326,7 @@ export function MprViewport({
         const currentToolGroupId = toolGroupIdRef.current;
 
         if (currentTools && currentToolGroupId) {
-          const toolGroup = currentTools.ToolGroupManager.getToolGroup(
-            currentToolGroupId,
-          );
-          const crosshairsTool = toolGroup?.getToolInstance(
-            MPR_CROSSHAIRS_TOOL_NAME,
-          ) as CornerstoneCrosshairsToolLike | undefined;
-
-          crosshairsTool?.computeToolCenter?.();
+          getMprCrosshairsToolCenterWorld(currentTools, currentToolGroupId);
           currentTools.utilities.triggerAnnotationRenderForViewportIds(
             mprLayoutDefinition.panes.map(
               (pane) => paneViewportIdsRef.current[pane.id],
@@ -909,6 +1352,8 @@ export function MprViewport({
 
         transientRecoveryAttemptsRef.current = 0;
         setStatus("ready");
+        syncReferenceLineSegmentsRef.current();
+        emitReferenceLineStateRef.current();
       } catch (error) {
         console.error("Failed to render MPR volume", error);
 
@@ -929,6 +1374,9 @@ export function MprViewport({
         }
 
         setStatus("error");
+        setReferenceLineSegmentByPaneId({});
+        referenceLineChangeTokenRef.current = 0;
+        onReferenceLineStateChangeRef.current?.(null);
       }
     }
 
@@ -961,6 +1409,12 @@ export function MprViewport({
     });
   }, [annotationCommand, viewportKey]);
 
+  useEffect(() => {
+    return () => {
+      onReferenceLineStateChangeRef.current?.(null);
+    };
+  }, []);
+
   const handleViewportPointerDownCapture = () => {
     if (isSelected) {
       return;
@@ -984,9 +1438,18 @@ export function MprViewport({
       data-mpr-primary-tool={
         effectiveTool === "select" ? "crosshairs" : effectiveTool
       }
+      data-mpr-slab-mode={mprSlabState.mode}
+      data-mpr-slab-thickness={String(mprSlabState.thickness)}
       data-view-mode="mpr"
       data-viewport-id={viewportKey}
       data-viewport-selected={String(isSelected)}
+      data-reference-lines-enabled={String(referenceLinesEnabled)}
+      data-reference-line-source={String(isReferenceLineSource)}
+      data-reference-line-visible={String(
+        Object.values(referenceLineSegmentByPaneId).some(Boolean),
+      )}
+      data-crosshair-sync-command-id={String(crosshairSyncCommand?.id ?? 0)}
+      data-crosshair-sync-applied-id={String(appliedCrosshairSyncCommandId)}
       data-active-annotation-count="0"
       data-annotation-total="0"
       data-selected-annotation-count="0"
@@ -1010,6 +1473,19 @@ export function MprViewport({
       >
         {mprLayoutDefinition.panes.map((pane) => {
           const paneSnapshot = paneSnapshots[pane.id];
+          const referenceLineSegment =
+            referenceLineSegmentByPaneId[pane.id] ?? null;
+          const isReferenceLineSourcePane =
+            isReferenceLineSource &&
+            referenceLineSourceState?.sourcePaneId === pane.id;
+          const paneWidth = Math.max(
+            paneElementRefs.current[pane.id]?.clientWidth ?? 1,
+            1,
+          );
+          const paneHeight = Math.max(
+            paneElementRefs.current[pane.id]?.clientHeight ?? 1,
+            1,
+          );
           const hasPaneScrollIndicator = paneSnapshot.frameCount > 0;
           const isSingleFramePane = paneSnapshot.frameCount === 1;
           const scrollThumbSizePercent = getScrollThumbSizePercent(
@@ -1028,15 +1504,23 @@ export function MprViewport({
           return (
             <div
               key={pane.id}
-              className="mpr-pane-shell"
+              className={`mpr-pane-shell${activePaneId === pane.id ? " is-selected" : ""}${isReferenceLineSourcePane ? " is-reference-line-source" : ""}`}
               data-testid="mpr-pane"
               data-pane-id={pane.id}
               data-pane-label={pane.label}
               data-pane-frame-index={paneSnapshot.frameIndex}
               data-pane-frame-count={paneSnapshot.frameCount}
+              data-pane-selected={String(activePaneId === pane.id)}
+              data-reference-line-source={String(isReferenceLineSourcePane)}
               style={{
                 gridColumn: `${pane.column} / span ${pane.columnSpan ?? 1}`,
                 gridRow: `${pane.row} / span ${pane.rowSpan ?? 1}`,
+              }}
+              onPointerDownCapture={() => {
+                if (activePaneIdRef.current !== pane.id) {
+                  activePaneIdRef.current = pane.id;
+                  setActivePaneId(pane.id);
+                }
               }}
             >
               <div
@@ -1049,6 +1533,24 @@ export function MprViewport({
                 }}
                 className="mpr-pane-canvas"
               />
+              {referenceLineSegment ? (
+                <svg
+                  className="viewport-reference-lines"
+                  data-testid="mpr-reference-line-layer"
+                  aria-hidden="true"
+                  viewBox={`0 0 ${paneWidth} ${paneHeight}`}
+                  preserveAspectRatio="none"
+                >
+                  <line
+                    className="viewport-reference-line"
+                    data-testid="mpr-reference-line"
+                    x1={referenceLineSegment.startCanvas[0]}
+                    y1={referenceLineSegment.startCanvas[1]}
+                    x2={referenceLineSegment.endCanvas[0]}
+                    y2={referenceLineSegment.endCanvas[1]}
+                  />
+                </svg>
+              ) : null}
               {paneSnapshot.frameCount > 0 ? (
                 <ViewportOverlayLayer
                   overlaySettings={overlaySettings}

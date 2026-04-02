@@ -16,6 +16,9 @@ export type ViewportTool =
   | "ellipseRoi"
   | "circleRoi";
 export type ViewportAction =
+  | "undo"
+  | "redo"
+  | "referenceLines"
   | "invert"
   | "keyImage"
   | "dicomTag"
@@ -26,6 +29,7 @@ export type ViewportToolbarMenu =
   | "layout"
   | "imageLayout"
   | "mprLayout"
+  | "mprSlab"
   | "sequenceSync"
   | "annotationManage";
 export type ViewportViewAction =
@@ -56,9 +60,13 @@ export type ViewportToolbarIconKey =
   | "layout"
   | "imageLayout"
   | "mprLayout"
+  | "mprSlab"
   | "sequenceSync"
   | "measure"
   | "roi"
+  | "undo"
+  | "redo"
+  | "referenceLines"
   | "invert"
   | "keyImage"
   | "keyImageList"
@@ -271,6 +279,21 @@ const viewportActionDefinitions: Record<
   ViewportAction,
   ViewportActionDefinition
 > = {
+  undo: {
+    id: "undo",
+    label: "撤销",
+    hint: "撤销最近一次图元或交互修改",
+  },
+  redo: {
+    id: "redo",
+    label: "重做",
+    hint: "恢复最近一次撤销的图元或交互修改",
+  },
+  referenceLines: {
+    id: "referenceLines",
+    label: "参考线",
+    hint: "显示当前选中堆栈切片在其他视图中的定位线",
+  },
   invert: {
     id: "invert",
     label: "反色",
@@ -358,6 +381,11 @@ const viewportToolbarMenuDefinitions: Record<
     label: "MPR",
     hint: "切换当前视口的 MPR 三视图布局",
   },
+  mprSlab: {
+    id: "mprSlab",
+    label: "投影",
+    hint: "切换当前 MPR 视口的 slab 投影模式和厚度",
+  },
   sequenceSync: {
     id: "sequenceSync",
     label: "序列同步",
@@ -443,6 +471,13 @@ export const viewportToolbarItems: ViewportToolbarItemDefinition[] = [
     iconKey: "roi",
   },
   {
+    id: "referenceLines",
+    kind: "action",
+    label: "参考线",
+    hint: viewportActionDefinitions.referenceLines.hint,
+    iconKey: "referenceLines",
+  },
+  {
     id: "invert",
     kind: "action",
     label: "反色",
@@ -497,6 +532,13 @@ export const viewportToolbarItems: ViewportToolbarItemDefinition[] = [
     label: "MPR",
     hint: viewportToolbarMenuDefinitions.mprLayout.hint,
     iconKey: "mprLayout",
+  },
+  {
+    id: "mprSlab",
+    kind: "menu",
+    label: "投影",
+    hint: viewportToolbarMenuDefinitions.mprSlab.hint,
+    iconKey: "mprSlab",
   },
   {
     id: "sequenceSync",

@@ -143,6 +143,27 @@ export const TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS: ToolbarShortcutCommandDefinit
       defaultBinding: createToolbarShortcutBinding("KeyC"),
     },
     {
+      id: "undo",
+      categoryId: "actions",
+      label: "撤销",
+      description: "撤销上一步图元或交互修改",
+      defaultBinding: null,
+    },
+    {
+      id: "redo",
+      categoryId: "actions",
+      label: "重做",
+      description: "重做最近一次撤销的操作",
+      defaultBinding: null,
+    },
+    {
+      id: "referenceLines",
+      categoryId: "actions",
+      label: "参考线",
+      description: "显示或隐藏当前选中堆栈切片在其他视图中的定位线",
+      defaultBinding: null,
+    },
+    {
       id: "invert",
       categoryId: "actions",
       label: "反色",
@@ -209,11 +230,25 @@ export function isToolbarShortcutToolCommand(
   commandId: ToolbarShortcutCommandId,
 ): commandId is Exclude<
   ToolbarShortcutCommandId,
-  "invert" | "keyImage" | "dicomTag" | "annotationList" | "settings"
+  | "undo"
+  | "redo"
+  | "referenceLines"
+  | "invert"
+  | "keyImage"
+  | "dicomTag"
+  | "annotationList"
+  | "settings"
 > {
-  return !["invert", "keyImage", "dicomTag", "annotationList", "settings"].includes(
-    commandId,
-  );
+  return ![
+    "undo",
+    "redo",
+    "referenceLines",
+    "invert",
+    "keyImage",
+    "dicomTag",
+    "annotationList",
+    "settings",
+  ].includes(commandId);
 }
 
 export function getToolbarShortcutCommandDefinition(

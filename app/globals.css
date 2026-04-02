@@ -1637,12 +1637,48 @@ select {
     background 120ms ease;
 }
 
+.viewport-stage::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12px;
+  z-index: 4;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(126, 232, 200, 0.98), rgba(78, 188, 161, 0.9));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    width 120ms ease,
+    opacity 120ms ease;
+}
+
 .viewport-stage.is-selected {
   border-color: #58c7ff;
   background: #081018;
   box-shadow:
     inset 0 0 0 1px rgba(88, 199, 255, 0.2),
     0 0 0 1px rgba(88, 199, 255, 0.32);
+}
+
+.viewport-stage[data-reference-line-source="true"] {
+  border-color: rgba(126, 232, 200, 0.86);
+  box-shadow:
+    inset 0 0 0 1px rgba(126, 232, 200, 0.16),
+    0 0 0 1px rgba(126, 232, 200, 0.22);
+}
+
+.viewport-stage[data-reference-line-source="true"]::before {
+  width: 38px;
+  opacity: 1;
+}
+
+.viewport-stage.is-selected[data-reference-line-source="true"] {
+  border-color: rgba(126, 232, 200, 0.92);
+  box-shadow:
+    inset 0 0 0 1px rgba(126, 232, 200, 0.24),
+    0 0 0 1px rgba(126, 232, 200, 0.3),
+    0 0 18px rgba(37, 101, 84, 0.16);
 }
 
 .viewport-stage[data-active-tool="select"][data-select-scroll-active="false"],
@@ -1654,6 +1690,24 @@ select {
 .viewport-canvas {
   width: 100%;
   height: 100%;
+}
+
+.viewport-reference-lines {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.viewport-reference-line {
+  fill: none;
+  stroke: rgba(108, 214, 255, 0.94);
+  stroke-width: 1.6;
+  stroke-dasharray: 7 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 2px rgba(6, 14, 20, 0.95));
 }
 
 .viewport-canvas.is-driver-hidden {
@@ -1688,10 +1742,50 @@ select {
   min-height: 0;
   border: 1px solid rgba(37, 49, 63, 0.88);
   background: #05080c;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
 }
 
 .viewport-stage.is-selected .mpr-pane-shell {
   border-color: rgba(109, 186, 235, 0.44);
+}
+
+.mpr-pane-shell.is-selected {
+  border-color: rgba(255, 196, 92, 0.92);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 196, 92, 0.26),
+    0 0 0 1px rgba(255, 196, 92, 0.18);
+}
+
+.viewport-stage.is-selected .mpr-pane-shell.is-selected {
+  border-color: rgba(255, 196, 92, 0.96);
+}
+
+.mpr-pane-shell.is-reference-line-source::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 8px;
+  z-index: 4;
+  width: 24px;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(126, 232, 200, 0.98), rgba(78, 188, 161, 0.92));
+  pointer-events: none;
+}
+
+.mpr-pane-shell.is-reference-line-source {
+  box-shadow:
+    inset 0 0 0 1px rgba(126, 232, 200, 0.18),
+    0 0 0 1px rgba(126, 232, 200, 0.18);
+}
+
+.mpr-pane-shell.is-reference-line-source.is-selected {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 196, 92, 0.26),
+    0 0 0 1px rgba(255, 196, 92, 0.18),
+    inset 0 0 0 2px rgba(126, 232, 200, 0.2);
 }
 
 .mpr-pane-canvas {

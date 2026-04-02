@@ -32,6 +32,13 @@ import {
   type ViewportMprLayoutId,
 } from "@/lib/viewports/mpr-layouts";
 import {
+  getViewportMprSlabModeDefinition,
+  getViewportMprSlabModeDefinitions,
+  VIEWPORT_MPR_SLAB_THICKNESS_PRESETS,
+  type ViewportMprSlabMode,
+  type ViewportMprSlabState,
+} from "@/lib/viewports/mpr-slab";
+import {
   getViewportLayoutDefinition,
   getViewportLayoutDefinitions,
   type ViewportLayoutId,
@@ -60,6 +67,7 @@ interface ViewportToolbarProps {
   layoutId: ViewportLayoutId;
   imageLayoutId: ViewportImageLayoutId;
   mprLayoutId: ViewportMprLayoutId;
+  mprSlabState: ViewportMprSlabState;
   cineState: ViewportCineState;
   cineEnabled: boolean;
   keyImageEnabled: boolean;
@@ -68,6 +76,7 @@ interface ViewportToolbarProps {
   keyImageListEnabled: boolean;
   sequenceSyncState: ViewportSequenceSyncState;
   crossStudyCalibrationCount: number;
+  referenceLinesEnabled: boolean;
   invertEnabled: boolean;
   annotationCount: number;
   selectedAnnotationCount: number;
@@ -76,6 +85,12 @@ interface ViewportToolbarProps {
   onLayoutChange: (layoutId: ViewportLayoutId) => void;
   onImageLayoutChange: (layoutId: ViewportImageLayoutId) => void;
   onMprLayoutChange: (layoutId: ViewportMprLayoutId | "off") => void;
+  onMprSlabModeChange: (mode: ViewportMprSlabMode) => void;
+  onMprSlabThicknessChange: (thickness: number) => void;
+  onMprSlabOpenCustomThickness: () => void;
+  onMprSlabReset: () => void;
+  onMprSlabApplyToAll: () => void;
+  onMprSlabApplyToLinked: () => void;
   onCineTogglePlay: () => void;
   onCineSetFps: (fps: ViewportCineFpsPreset) => void;
   onCineToggleLoop: () => void;
@@ -86,6 +101,7 @@ interface ViewportToolbarProps {
     action: "fit" | "reset" | "rotateRight" | "flipHorizontal" | "flipVertical",
   ) => void;
   onAction: (action: ViewportAction) => void;
+  onHistoryAction: (action: "undo" | "redo") => void;
   onAnnotationManageAction: (action: "deleteSelected" | "clearAll") => void;
   onOpenKeyImageList: () => void;
   onOpenSettings: () => void;
@@ -228,6 +244,10 @@ function isToolbarItemModeDisabled(
   }
 
   if (viewportMode !== "mpr") {
+    if (item.kind === "menu" && item.id === "mprSlab") {
+      return true;
+    }
+
     if (
       !viewCommandsEnabled &&
       ((item.kind === "menu" && item.id === "windowPreset") ||
@@ -275,6 +295,7 @@ export function ViewportToolbar({
   layoutId,
   imageLayoutId,
   mprLayoutId,
+  mprSlabState,
   cineState,
   cineEnabled,
   keyImageEnabled,
@@ -283,6 +304,7 @@ export function ViewportToolbar({
   keyImageListEnabled,
   sequenceSyncState,
   crossStudyCalibrationCount,
+  referenceLinesEnabled,
   invertEnabled,
   annotationCount,
   selectedAnnotationCount,
@@ -291,6 +313,12 @@ export function ViewportToolbar({
   onLayoutChange,
   onImageLayoutChange,
   onMprLayoutChange,
+  onMprSlabModeChange,
+  onMprSlabThicknessChange,
+  onMprSlabOpenCustomThickness,
+  onMprSlabReset,
+  onMprSlabApplyToAll,
+  onMprSlabApplyToLinked,
   onCineTogglePlay,
   onCineSetFps,
   onCineToggleLoop,
@@ -299,6 +327,7 @@ export function ViewportToolbar({
   onWindowPresetSelect,
   onViewAction,
   onAction,
+  onHistoryAction,
   onAnnotationManageAction,
   onOpenKeyImageList,
   onOpenSettings,
@@ -308,6 +337,10 @@ export function ViewportToolbar({
   const currentImageLayout = getViewportImageLayoutDefinition(imageLayoutId);
   const currentLayout = getViewportLayoutDefinition(layoutId);
   const currentMprLayout = getViewportMprLayoutDefinition(mprLayoutId);
+  const currentMprSlabMode = getViewportMprSlabModeDefinition(mprSlabState.mode);
+  const hasPresetMprSlabThickness = VIEWPORT_MPR_SLAB_THICKNESS_PRESETS.includes(
+    mprSlabState.thickness as (typeof VIEWPORT_MPR_SLAB_THICKNESS_PRESETS)[number],
+  );
   const enabledSequenceSyncTypes =
     getEnabledViewportSequenceSyncTypes(sequenceSyncState);
   const mprLayoutMenuValue = viewportMode === "mpr" ? mprLayoutId : "off";
@@ -413,6 +446,144 @@ export function ViewportToolbar({
     ],
     onClick: ({ key }) => {
       onMprLayoutChange(key as ViewportMprLayoutId | "off");
+    },
+  };
+  const mprSlabMenu: MenuProps = {
+    selectable: true,
+    selectedKeys: [
+      `mode:${mprSlabState.mode}`,
+      `thickness:${mprSlabState.thickness}`,
+    ],
+    items: [
+      {
+        key: "mode-group",
+        type: "group",
+        label: "投影模式",
+        children: getViewportMprSlabModeDefinitions().map((mode) => ({
+          key: `mode:${mode.id}`,
+          label: renderToolMenuOption({
+            label: `${mode.label} · ${mode.description}`,
+            iconName: "mprSlab",
+            testId: `viewport-mpr-slab-mode-option-${mode.id}`,
+          }),
+          title: `${mode.label} · ${mode.description}`,
+        })),
+      },
+      {
+        type: "divider",
+      },
+      {
+        key: "thickness-group",
+        type: "group",
+        label: "厚度",
+        children: [
+          ...VIEWPORT_MPR_SLAB_THICKNESS_PRESETS.map((thickness) => ({
+            key: `thickness:${thickness}`,
+            label: renderToolMenuOption({
+              label: `${thickness} mm`,
+              iconName: "mprSlab",
+              testId: `viewport-mpr-slab-thickness-option-${thickness}`,
+            }),
+            title: `${thickness} mm`,
+          })),
+          ...(!hasPresetMprSlabThickness
+            ? [
+                {
+                  key: `thickness:${mprSlabState.thickness}`,
+                  label: renderToolMenuOption({
+                    label: `自定义 · ${mprSlabState.thickness} mm`,
+                    iconName: "mprSlab",
+                    testId: "viewport-mpr-slab-thickness-option-custom-current",
+                  }),
+                  title: `自定义 · ${mprSlabState.thickness} mm`,
+                },
+              ]
+            : []),
+          {
+            key: "action:customThickness",
+            label: renderToolMenuOption({
+              label: "自定义厚度…",
+              iconName: "mprSlab",
+              testId: "viewport-mpr-slab-action-custom-thickness",
+            }),
+            title: "输入自定义投影厚度",
+          },
+        ],
+      },
+      {
+        type: "divider",
+      },
+      {
+        key: "action-group",
+        type: "group",
+        label: "操作",
+        children: [
+          {
+            key: "action:reset",
+            label: renderToolMenuOption({
+              label: "重置投影",
+              iconName: "mprSlab",
+              testId: "viewport-mpr-slab-action-reset",
+            }),
+            title: "恢复默认投影模式和厚度",
+          },
+          {
+            key: "action:applyAll",
+            label: renderToolMenuOption({
+              label: "同步到所有 MPR",
+              iconName: "mprSlab",
+              testId: "viewport-mpr-slab-action-apply-all",
+            }),
+            title: "将当前投影模式和厚度同步到所有 MPR 视口",
+          },
+          {
+            key: "action:applyLinked",
+            label: renderToolMenuOption({
+              label: "同步到联动 MPR",
+              iconName: "mprSlab",
+              testId: "viewport-mpr-slab-action-apply-linked",
+            }),
+            title: "将当前投影模式和厚度同步到同组联动 MPR 视口",
+          },
+        ],
+      },
+    ],
+    onClick: ({ key }) => {
+      const keyValue = String(key);
+
+      if (keyValue.startsWith("mode:")) {
+        onMprSlabModeChange(keyValue.slice(5) as ViewportMprSlabMode);
+        return;
+      }
+
+      if (keyValue.startsWith("thickness:")) {
+        const thickness = Number(keyValue.slice(10));
+
+        if (Number.isFinite(thickness)) {
+          onMprSlabThicknessChange(thickness);
+        }
+
+        return;
+      }
+
+      if (keyValue === "action:reset") {
+        onMprSlabReset();
+        return;
+      }
+
+      if (keyValue === "action:customThickness") {
+        onMprSlabOpenCustomThickness();
+        return;
+      }
+
+      if (keyValue === "action:applyAll") {
+        onMprSlabApplyToAll();
+        return;
+      }
+
+      if (keyValue === "action:applyLinked") {
+        onMprSlabApplyToLinked();
+      }
     },
   };
   const cineMenu: MenuProps = {
@@ -552,6 +723,7 @@ export function ViewportToolbar({
     },
   };
   const annotationListDisabled = disabled || viewportMode === "mpr";
+  const historyActionsDisabled = disabled || viewportMode === "mpr";
 
   return (
     <div className="viewport-toolbar" data-testid="viewport-toolbar">
@@ -648,6 +820,8 @@ export function ViewportToolbar({
                       ? imageLayoutMenu
                       : item.id === "mprLayout"
                         ? mprLayoutMenu
+                        : item.id === "mprSlab"
+                          ? mprSlabMenu
                         : item.id === "sequenceSync"
                           ? sequenceSyncMenu
                           : item.id === "layout"
@@ -662,6 +836,8 @@ export function ViewportToolbar({
                       ? "viewport-image-layout-button"
                       : item.id === "mprLayout"
                         ? "viewport-mpr-layout-button"
+                        : item.id === "mprSlab"
+                          ? "viewport-mpr-slab-button"
                         : item.id === "sequenceSync"
                           ? "viewport-sequence-sync-button"
                           : item.id === "layout"
@@ -690,6 +866,10 @@ export function ViewportToolbar({
                         ? viewportMode === "mpr"
                           ? `MPR ${currentMprLayout.label} · ${currentMprLayout.description}`
                           : "MPR 已关闭"
+                        : item.id === "mprSlab"
+                          ? viewportMode === "mpr"
+                            ? `投影 ${currentMprSlabMode.label} · ${mprSlabState.thickness} mm`
+                            : "仅在 MPR 视图可用"
                         : item.id === "sequenceSync"
                           ? sequenceSyncState.crossStudy &&
                             crossStudyCalibrationCount > 0
@@ -702,6 +882,7 @@ export function ViewportToolbar({
                             : "删除图元";
               const isToggled =
                 (item.id === "cine" && cineState.isPlaying) ||
+                (item.id === "mprSlab" && mprSlabState.mode !== "none") ||
                 (item.id === "sequenceSync" &&
                   hasEnabledViewportSequenceSync(sequenceSyncState));
 
@@ -726,9 +907,11 @@ export function ViewportToolbar({
                       : item.id === "cine"
                         ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
                       : item.id === "imageLayout"
-                          ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-image-layout"
-                          : item.id === "mprLayout"
+                      ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-image-layout"
+                      : item.id === "mprLayout"
                             ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-mpr-layout"
+                            : item.id === "mprSlab"
+                              ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
                             : item.id === "sequenceSync"
                               ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
                               : item.id === "layout"
@@ -746,6 +929,14 @@ export function ViewportToolbar({
                     data-sequence-sync-state={
                       item.id === "sequenceSync"
                         ? enabledSequenceSyncTypes.join(",") || "off"
+                        : undefined
+                    }
+                    data-mpr-slab-mode={
+                      item.id === "mprSlab" ? mprSlabState.mode : undefined
+                    }
+                    data-mpr-slab-thickness={
+                      item.id === "mprSlab"
+                        ? String(mprSlabState.thickness)
                         : undefined
                     }
                     aria-label={item.label}
@@ -794,8 +985,9 @@ export function ViewportToolbar({
               item.kind === "tool" && activeTool === item.id;
             const isToggledAction =
               item.kind === "action" &&
+              ((item.id === "referenceLines" && referenceLinesEnabled) ||
               ((item.id === "invert" && invertEnabled) ||
-                (item.id === "keyImage" && keyImageActive));
+                (item.id === "keyImage" && keyImageActive)));
             const dataTestId = `viewport-tool-${item.id}`;
 
             return (
@@ -846,6 +1038,34 @@ export function ViewportToolbar({
             {keyImageCount > 0 ? (
               <span className="viewport-utility-count">{keyImageCount}</span>
             ) : null}
+          </button>
+          <button
+            type="button"
+            className="viewport-settings-button"
+            data-testid="viewport-undo-button"
+            aria-label="撤销"
+            title="撤销"
+            disabled={historyActionsDisabled}
+            onClick={() => onHistoryAction("undo")}
+          >
+            <ViewportToolbarIcon
+              className="viewport-toolbar-icon"
+              name="undo"
+            />
+          </button>
+          <button
+            type="button"
+            className="viewport-settings-button"
+            data-testid="viewport-redo-button"
+            aria-label="重做"
+            title="重做"
+            disabled={historyActionsDisabled}
+            onClick={() => onHistoryAction("redo")}
+          >
+            <ViewportToolbarIcon
+              className="viewport-toolbar-icon"
+              name="redo"
+            />
           </button>
           <button
             type="button"

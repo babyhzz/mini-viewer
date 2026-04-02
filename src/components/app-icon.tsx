@@ -34,11 +34,14 @@ export type AppIconName =
   | "layout"
   | "length"
   | "mprLayout"
+  | "mprSlab"
   | "overflow"
   | "pan"
   | "pencil-square"
   | "plus-lg"
   | "polyline"
+  | "referenceLines"
+  | "redo"
   | "rectangleRoi"
   | "reset"
   | "rotateRight"
@@ -46,6 +49,7 @@ export type AppIconName =
   | "sequenceSync"
   | "settings"
   | "trash3"
+  | "undo"
   | "windowLevel"
   | "windowPreset"
   | "x-lg"
@@ -266,6 +270,17 @@ const icons: Record<AppIconName, ReactNode> = {
       <StrokePath d="M5 12H19" />
     </>
   ),
+  mprSlab: (
+    <>
+      <AccentRect x="7.2" y="10.1" width="9.6" height="3.8" rx="0.8" />
+      <StrokeRect x="5" y="5.5" width="14" height="13" rx="1.2" />
+      <StrokePath d="M7.2 8.1H16.8" />
+      <StrokePath d="M7.2 10.1H16.8" />
+      <StrokePath d="M7.2 13.9H16.8" />
+      <StrokePath d="M7.2 15.9H16.8" />
+      <StrokePath d="M19 9.2L21 12L19 14.8" />
+    </>
+  ),
   sequenceSync: (
     <>
       <AccentCircle cx="12" cy="12" r="2.4" />
@@ -392,6 +407,32 @@ const icons: Record<AppIconName, ReactNode> = {
       <circle cx="7.1" cy="9" r="0.9" fill="currentColor" />
       <circle cx="7.1" cy="12" r="0.9" fill="currentColor" />
       <circle cx="7.1" cy="15" r="0.9" fill="currentColor" />
+    </>
+  ),
+  undo: (
+    <>
+      <AccentPath d="M8.1 9.2H16.2C17.9 9.2 19.3 10.58 19.3 12.28C19.3 13.98 17.9 15.36 16.2 15.36H11.5" />
+      <StrokePath d="M8.1 9.2H16.2C17.9 9.2 19.3 10.58 19.3 12.28C19.3 13.98 17.9 15.36 16.2 15.36H11.5" />
+      <StrokePath d="M9.2 6.85L4.95 10.95L9.2 15.05" />
+    </>
+  ),
+  redo: (
+    <>
+      <AccentPath d="M15.9 9.2H7.8C6.1 9.2 4.7 10.58 4.7 12.28C4.7 13.98 6.1 15.36 7.8 15.36H12.5" />
+      <StrokePath d="M15.9 9.2H7.8C6.1 9.2 4.7 10.58 4.7 12.28C4.7 13.98 6.1 15.36 7.8 15.36H12.5" />
+      <StrokePath d="M14.8 6.85L19.05 10.95L14.8 15.05" />
+    </>
+  ),
+  referenceLines: (
+    <>
+      <AccentRect x="6.2" y="6.2" width="11.6" height="11.6" rx="1.2" />
+      <StrokeRect x="5.15" y="5.15" width="13.7" height="13.7" rx="1.45" />
+      <StrokePath d="M8.1 8.4L15.9 15.6" />
+      <StrokePath d="M15.9 8.4L8.1 15.6" />
+      <StrokePath d="M12 5.15V8.05" />
+      <StrokePath d="M12 15.95V18.85" />
+      <StrokePath d="M5.15 12H8.05" />
+      <StrokePath d="M15.95 12H18.85" />
     </>
   ),
   settings: (

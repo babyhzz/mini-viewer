@@ -30,6 +30,7 @@ export type ToolbarShortcutCommandId =
   | "circleRoi"
   | "undo"
   | "redo"
+  | "referenceLines"
   | "invert"
   | "keyImage"
   | "dicomTag"
@@ -70,8 +71,17 @@ export interface ToolbarShortcutSettings {
   bindings: Record<ToolbarShortcutCommandId, ToolbarShortcutBinding | null>;
 }
 
+export type ViewerMprSlabMode = "none" | "mip" | "minip" | "average";
+
+export interface ViewerMprProjectionSettings {
+  schemaVersion: 1;
+  defaultSlabMode: ViewerMprSlabMode;
+  defaultSlabThickness: number;
+}
+
 export interface ViewerSettings {
   schemaVersion: 1;
   viewportOverlay: ViewportOverlaySettings;
   toolbarShortcuts: ToolbarShortcutSettings;
+  mprProjection: ViewerMprProjectionSettings;
 }

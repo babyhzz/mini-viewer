@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App, Spin } from "antd";
+import { App, InputNumber, Spin } from "antd";
 
 import { AnnotationListDrawer } from "@/components/annotation-list-drawer";
 import { AppIcon } from "@/components/app-icon";
@@ -15,8 +15,10 @@ import { StackViewport } from "@/components/stack-viewport";
 import { ThumbnailCanvas } from "@/components/thumbnail-canvas";
 import { ViewerSettingsDrawer } from "@/components/viewer-settings-drawer";
 import { ViewportToolbar } from "@/components/viewport-toolbar";
+import { initializeCornerstone } from "@/lib/cornerstone/init";
 import {
   createDefaultViewerSettings,
+  getViewerSettingsDefaultMprSlabState,
   normalizeViewerSettings,
 } from "@/lib/settings/overlay";
 import {
@@ -37,6 +39,11 @@ import {
   type ViewportMode,
   type ViewportMprLayoutId,
 } from "@/lib/viewports/mpr-layouts";
+import {
+  normalizeViewportMprSlabState,
+  type ViewportMprSlabState,
+  type ViewportMprSlabMode,
+} from "@/lib/viewports/mpr-slab";
 import {
   getViewportLayoutDefinition,
   getViewportLayoutSlotIds,
@@ -59,6 +66,15 @@ import {
   hasKeyImageAtFrame,
   sortKeyImageEntries,
 } from "@/lib/viewports/key-images";
+import type {
+  Point3,
+  StackViewportReferenceLineState,
+} from "@/lib/viewports/reference-lines";
+import {
+  clonePoint3,
+  getPoint3QuadCenter,
+} from "@/lib/viewports/reference-lines";
+import type { ViewportMprCrosshairSyncCommand } from "@/lib/viewports/mpr-crosshairs";
 import {
   areImagesSliceAligned,
   DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE,
@@ -302,6 +318,89 @@ function areViewportPresentationStatesEqual(
   );
 }
 
+function areViewportReferenceLineStatesEqual(
+  left: StackViewportReferenceLineState | null | undefined,
+  right: StackViewportReferenceLineState | null | undefined,
+) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    left.status === right.status &&
+    left.frameOfReferenceUID === right.frameOfReferenceUID &&
+    left.lastChangeToken === right.lastChangeToken
+  );
+}
+
+function areViewportMprSlabStatesEqual(
+  left: ViewportMprSlabState,
+  right: ViewportMprSlabState,
+) {
+  return left.mode === right.mode && left.thickness === right.thickness;
+}
+
+function dotPoint3(left: Point3, right: Point3) {
+  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+}
+
+function getReferenceLinePlaneCenter(
+  state: StackViewportReferenceLineState | null | undefined,
+): Point3 | null {
+  const corners = state?.imageCornersWorld;
+
+  if (!corners || corners.length !== 4) {
+    return null;
+  }
+
+  return getPoint3QuadCenter(corners);
+}
+
+function getReferenceLineSourcePoint(
+  state: StackViewportReferenceLineState | null | undefined,
+) {
+  return state?.referencePointWorld ?? getReferenceLinePlaneCenter(state);
+}
+
+function findNearestFrameIndexForReferenceLinePlane(
+  sourceState: StackViewportReferenceLineState | null | undefined,
+  targetImages: DicomSeriesNode["images"],
+) {
+  if (
+    !sourceState ||
+    sourceState.status !== "ready" ||
+    !sourceState.imageCornersWorld ||
+    !targetImages.length
+  ) {
+    return null;
+  }
+
+  const targetReferenceImage = targetImages[0] ?? null;
+  const targetNormal = getImageSliceNormal(targetReferenceImage);
+  const sourceCenter = getReferenceLineSourcePoint(sourceState);
+
+  if (!targetNormal || !sourceCenter) {
+    return null;
+  }
+
+  const targetFrameOfReferenceUID =
+    targetReferenceImage?.frameOfReferenceUID ?? null;
+
+  if (
+    sourceState.frameOfReferenceUID &&
+    targetFrameOfReferenceUID &&
+    sourceState.frameOfReferenceUID !== targetFrameOfReferenceUID
+  ) {
+    return null;
+  }
+
+  return findNearestImageIndexBySlicePosition(
+    targetImages,
+    dotPoint3(sourceCenter, targetNormal),
+    targetNormal,
+  );
+}
+
 function buildViewportSeriesAssignments(
   viewportIds: string[],
   previousAssignments: Record<string, string | null>,
@@ -355,10 +454,11 @@ function buildViewportSeriesAssignments(
 }
 
 export function DicomViewerApp() {
-  const { modal } = App.useApp();
+  const { message, modal } = App.useApp();
   const annotationCommandIdRef = useRef(0);
   const viewCommandIdRef = useRef(0);
   const stackNavigationCommandIdRef = useRef(0);
+  const mprCrosshairSyncCommandIdRef = useRef(0);
   const sequenceSyncCommandIdRef = useRef(0);
   const presentationSyncCommandIdRef = useRef(0);
   const manualSequenceSyncRequestIdRef = useRef(0);
@@ -367,6 +467,12 @@ export function DicomViewerApp() {
   );
   const processedPresentationSyncTokenByViewportRef = useRef<
     Record<string, number>
+  >({});
+  const processedMprReferenceNavigationKeyByViewportRef = useRef<
+    Record<string, string>
+  >({});
+  const processedMprCrosshairSyncKeyByViewportRef = useRef<
+    Record<string, string>
   >({});
   const processedManualSequenceSyncRequestIdRef = useRef(0);
   const viewerSession = useViewerSessionStore();
@@ -386,6 +492,8 @@ export function DicomViewerApp() {
     setMaximizedViewportId,
     selectedViewportId,
     setSelectedViewportId,
+    referenceLinesEnabled,
+    setReferenceLinesEnabled,
     viewportSeriesAssignments,
     setViewportSeriesAssignments,
     viewportInvertEnabled,
@@ -404,6 +512,8 @@ export function DicomViewerApp() {
     setViewportModeById,
     viewportMprLayoutIdById,
     setViewportMprLayoutIdById,
+    viewportMprSlabStateById,
+    setViewportMprSlabStateById,
     viewportCellSelectionById,
     setViewportCellSelectionById,
     viewportCineStateById,
@@ -414,6 +524,10 @@ export function DicomViewerApp() {
     setViewportSequenceSyncStateById,
     stackViewportRuntimeStateById,
     setStackViewportRuntimeStateById,
+    stackViewportReferenceLineStateById,
+    setStackViewportReferenceLineStateById,
+    mprViewportReferenceLineStateById,
+    setMprViewportReferenceLineStateById,
     stackViewportPresentationStateById,
     setStackViewportPresentationStateById,
     viewportStackNavigationCommandById,
@@ -422,6 +536,8 @@ export function DicomViewerApp() {
     setViewportSequenceSyncCommandById,
     viewportPresentationSyncCommandById,
     setViewportPresentationSyncCommandById,
+    viewportMprCrosshairSyncCommandById,
+    setViewportMprCrosshairSyncCommandById,
     crossStudyCalibrationByPairKey,
     setCrossStudyCalibrationByPairKey,
     manualSequenceSyncRequest,
@@ -491,6 +607,14 @@ export function DicomViewerApp() {
   const activeViewportMprLayoutId =
     viewportMprLayoutIdById[selectedViewportId] ??
     DEFAULT_VIEWPORT_MPR_LAYOUT_ID;
+  const viewerDefaultMprSlabState = useMemo(
+    () => getViewerSettingsDefaultMprSlabState(viewerSettings),
+    [viewerSettings],
+  );
+  const activeViewportMprSlabState = normalizeViewportMprSlabState(
+    viewportMprSlabStateById[selectedViewportId],
+    viewerDefaultMprSlabState,
+  );
   const activeViewportImageLayout = getViewportImageLayoutDefinition(
     activeViewportImageLayoutId,
   );
@@ -538,6 +662,21 @@ export function DicomViewerApp() {
       calibration.leftViewportId === selectedViewportId ||
       calibration.rightViewportId === selectedViewportId,
   ).length;
+  const referenceLineSourceViewportId =
+    referenceLinesEnabled &&
+    ((selectedViewportMode === "stack" &&
+      activeViewportImageLayoutId === DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID) ||
+      selectedViewportMode === "mpr")
+      ? selectedViewportId
+      : null;
+  const referenceLineSourceState =
+    referenceLineSourceViewportId != null
+      ? (selectedViewportMode === "mpr"
+          ? (mprViewportReferenceLineStateById[referenceLineSourceViewportId] ??
+            null)
+          : (stackViewportReferenceLineStateById[referenceLineSourceViewportId] ??
+            null))
+      : null;
 
   const dispatchSequenceSyncFromViewport = useCallback(
     (sourceViewportId: string) => {
@@ -1071,6 +1210,280 @@ export function DicomViewerApp() {
     ],
   );
 
+  const handleViewportMprSlabModeChange = useCallback(
+    (mode: ViewportMprSlabMode) => {
+      setViewportMprSlabStateById((previous) => {
+        const currentState = normalizeViewportMprSlabState(
+          previous[selectedViewportId],
+          viewerDefaultMprSlabState,
+        );
+
+        if (currentState.mode === mode) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [selectedViewportId]: {
+            ...currentState,
+            mode,
+          },
+        };
+      });
+    },
+    [
+      selectedViewportId,
+      setViewportMprSlabStateById,
+      viewerDefaultMprSlabState,
+    ],
+  );
+
+  const handleViewportMprSlabThicknessChange = useCallback(
+    (thickness: number) => {
+      setViewportMprSlabStateById((previous) => {
+        const currentState = normalizeViewportMprSlabState(
+          previous[selectedViewportId],
+          viewerDefaultMprSlabState,
+        );
+
+        if (currentState.thickness === thickness) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [selectedViewportId]: {
+            ...currentState,
+            thickness,
+          },
+        };
+      });
+    },
+    [
+      selectedViewportId,
+      setViewportMprSlabStateById,
+      viewerDefaultMprSlabState,
+    ],
+  );
+
+  const handleViewportMprSlabOpenCustomThickness = useCallback(() => {
+    let draftThickness = activeViewportMprSlabState.thickness;
+
+    modal.confirm({
+      title: "自定义投影厚度",
+      content: (
+        <div
+          data-testid="mpr-slab-custom-thickness-dialog"
+          style={{
+            display: "grid",
+            gap: 12,
+            paddingTop: 4,
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              color: "rgba(216, 223, 232, 0.9)",
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            输入当前 MPR 视口的投影厚度，单位为 mm。
+          </p>
+          <InputNumber
+            autoFocus
+            min={0.1}
+            max={200}
+            step={0.5}
+            precision={1}
+            defaultValue={activeViewportMprSlabState.thickness}
+            addonAfter="mm"
+            data-testid="mpr-slab-custom-thickness-input"
+            style={{ width: "100%" }}
+            onChange={(value) => {
+              if (typeof value === "number" && Number.isFinite(value)) {
+                draftThickness = value;
+              }
+            }}
+          />
+        </div>
+      ),
+      okText: "应用",
+      okButtonProps: {
+        "data-testid": "mpr-slab-custom-thickness-submit",
+      },
+      cancelText: "取消",
+      cancelButtonProps: {
+        "data-testid": "mpr-slab-custom-thickness-cancel",
+      },
+      onOk: () => {
+        if (!Number.isFinite(draftThickness) || draftThickness < 0.1) {
+          message.warning("请输入大于 0 的投影厚度。");
+          return Promise.reject(new Error("Invalid MPR slab thickness"));
+        }
+
+        handleViewportMprSlabThicknessChange(draftThickness);
+        return Promise.resolve();
+      },
+    });
+  }, [
+    activeViewportMprSlabState.thickness,
+    handleViewportMprSlabThicknessChange,
+    message,
+    modal,
+  ]);
+
+  const handleViewportMprSlabReset = useCallback(() => {
+    setViewportMprSlabStateById((previous) => {
+      const currentState = normalizeViewportMprSlabState(
+        previous[selectedViewportId],
+        viewerDefaultMprSlabState,
+      );
+
+      if (
+        currentState.mode === viewerDefaultMprSlabState.mode &&
+        currentState.thickness === viewerDefaultMprSlabState.thickness
+      ) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        [selectedViewportId]: {
+          ...viewerDefaultMprSlabState,
+        },
+      };
+    });
+  }, [
+    selectedViewportId,
+    setViewportMprSlabStateById,
+    viewerDefaultMprSlabState,
+  ]);
+
+  const handleViewportMprSlabApplyToAll = useCallback(() => {
+    setViewportMprSlabStateById((previous) => {
+      const sourceState = normalizeViewportMprSlabState(
+        previous[selectedViewportId],
+        viewerDefaultMprSlabState,
+      );
+      let hasChanges = false;
+      const nextState = { ...previous };
+
+      for (const viewportId of viewportIds) {
+        if ((viewportModeById[viewportId] ?? DEFAULT_VIEWPORT_MODE) !== "mpr") {
+          continue;
+        }
+
+        const targetState = normalizeViewportMprSlabState(
+          previous[viewportId],
+          viewerDefaultMprSlabState,
+        );
+
+        if (
+          targetState.mode === sourceState.mode &&
+          targetState.thickness === sourceState.thickness
+        ) {
+          continue;
+        }
+
+        nextState[viewportId] = {
+          ...sourceState,
+        };
+        hasChanges = true;
+      }
+
+      return hasChanges ? nextState : previous;
+    });
+  }, [
+    selectedViewportId,
+    setViewportMprSlabStateById,
+    viewerDefaultMprSlabState,
+    viewportIds,
+    viewportModeById,
+  ]);
+
+  const handleViewportMprSlabApplyToLinked = useCallback(() => {
+    if (selectedViewportMode !== "mpr") {
+      return;
+    }
+
+    const sourceReferenceState =
+      mprViewportReferenceLineStateById[selectedViewportId] ?? null;
+
+    if (
+      !sourceReferenceState ||
+      sourceReferenceState.status !== "ready" ||
+      !sourceReferenceState.frameOfReferenceUID
+    ) {
+      message.info("当前 MPR 视口尚未建立联动参考，暂时无法同步。");
+      return;
+    }
+
+    let appliedTargetCount = 0;
+
+    setViewportMprSlabStateById((previous) => {
+      const sourceState = normalizeViewportMprSlabState(
+        previous[selectedViewportId],
+        viewerDefaultMprSlabState,
+      );
+      const nextState = { ...previous };
+
+      for (const viewportId of viewportIds) {
+        if (viewportId === selectedViewportId) {
+          continue;
+        }
+
+        if ((viewportModeById[viewportId] ?? DEFAULT_VIEWPORT_MODE) !== "mpr") {
+          continue;
+        }
+
+        const targetReferenceState =
+          mprViewportReferenceLineStateById[viewportId] ?? null;
+
+        if (
+          !targetReferenceState ||
+          targetReferenceState.status !== "ready" ||
+          targetReferenceState.frameOfReferenceUID !==
+            sourceReferenceState.frameOfReferenceUID
+        ) {
+          continue;
+        }
+
+        const targetState = normalizeViewportMprSlabState(
+          previous[viewportId],
+          viewerDefaultMprSlabState,
+        );
+
+        if (
+          targetState.mode === sourceState.mode &&
+          targetState.thickness === sourceState.thickness
+        ) {
+          continue;
+        }
+
+        nextState[viewportId] = {
+          ...sourceState,
+        };
+        appliedTargetCount += 1;
+      }
+
+      return appliedTargetCount > 0 ? nextState : previous;
+    });
+
+    if (appliedTargetCount === 0) {
+      message.info("当前没有可同步的联动 MPR 视口。");
+    }
+  }, [
+    message,
+    mprViewportReferenceLineStateById,
+    selectedViewportId,
+    selectedViewportMode,
+    setViewportMprSlabStateById,
+    viewerDefaultMprSlabState,
+    viewportIds,
+    viewportModeById,
+  ]);
+
   const handleViewportCineTogglePlay = useCallback(() => {
     if (!activeViewportCineEnabled) {
       return;
@@ -1245,8 +1658,51 @@ export function DicomViewerApp() {
     });
   };
 
+  const handleViewportHistoryAction = useCallback(
+    (action: "undo" | "redo") => {
+      if (selectedViewportMode === "mpr") {
+        return;
+      }
+
+      void initializeCornerstone()
+        .then(({ core }) => {
+          const historyMemo = core.utilities.HistoryMemo.DefaultHistoryMemo;
+
+          if (action === "undo") {
+            historyMemo.undo();
+            return;
+          }
+
+          historyMemo.redo();
+        })
+        .catch((error) => {
+          console.error(`Failed to ${action} viewport history`, error);
+        });
+    },
+    [selectedViewportMode],
+  );
+
   const handleViewportAction = useCallback(
     (action: ViewportAction) => {
+      if (action === "undo" || action === "redo") {
+        handleViewportHistoryAction(action);
+        return;
+      }
+
+      if (action === "referenceLines") {
+        const canToggleReferenceLines =
+          selectedViewportMode === "mpr" ||
+          (selectedViewportMode === "stack" &&
+            activeViewportImageLayoutId === DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID);
+
+        if (!canToggleReferenceLines) {
+          return;
+        }
+
+        setReferenceLinesEnabled((previous) => !previous);
+        return;
+      }
+
       if (action === "invert") {
         setViewportInvertEnabled((previous) => ({
           ...previous,
@@ -1273,9 +1729,12 @@ export function DicomViewerApp() {
       setAnnotationListOpen(true);
     },
     [
+      handleViewportHistoryAction,
+      activeViewportImageLayoutId,
       handleToggleCurrentKeyImage,
       selectedViewportId,
       selectedViewportMode,
+      setReferenceLinesEnabled,
       setAnnotationListOpen,
       setDicomTagDialogViewportId,
       setViewportInvertEnabled,
@@ -1430,7 +1889,56 @@ export function DicomViewerApp() {
     }
 
     const payload = (await response.json()) as ViewerSettings;
-    setViewerSettings(normalizeViewerSettings(payload));
+    const normalizedSettings = normalizeViewerSettings(payload);
+    const previousDefaultMprSlabState =
+      getViewerSettingsDefaultMprSlabState(viewerSettings);
+    const nextDefaultMprSlabState =
+      getViewerSettingsDefaultMprSlabState(normalizedSettings);
+
+    if (
+      !areViewportMprSlabStatesEqual(
+        previousDefaultMprSlabState,
+        nextDefaultMprSlabState,
+      )
+    ) {
+      setViewportMprSlabStateById((previous) => {
+        let nextState: Record<string, ViewportMprSlabState> | null = null;
+
+        for (const viewportId of viewportIds) {
+          const currentState = normalizeViewportMprSlabState(
+            previous[viewportId],
+            previousDefaultMprSlabState,
+          );
+
+          if (
+            !areViewportMprSlabStatesEqual(
+              currentState,
+              previousDefaultMprSlabState,
+            )
+          ) {
+            continue;
+          }
+
+          if (
+            areViewportMprSlabStatesEqual(currentState, nextDefaultMprSlabState)
+          ) {
+            continue;
+          }
+
+          if (!nextState) {
+            nextState = { ...previous };
+          }
+
+          nextState[viewportId] = {
+            ...nextDefaultMprSlabState,
+          };
+        }
+
+        return nextState ?? previous;
+      });
+    }
+
+    setViewerSettings(normalizedSettings);
     setSettingsOpen(false);
   };
 
@@ -1604,6 +2112,12 @@ export function DicomViewerApp() {
     setStackViewportRuntimeStateById((previous) =>
       alignViewportNullableStateMap(nextViewportIds, previous),
     );
+    setStackViewportReferenceLineStateById((previous) =>
+      alignViewportNullableStateMap(nextViewportIds, previous),
+    );
+    setMprViewportReferenceLineStateById((previous) =>
+      alignViewportNullableStateMap(nextViewportIds, previous),
+    );
     setStackViewportPresentationStateById((previous) =>
       alignViewportNullableStateMap(nextViewportIds, previous),
     );
@@ -1614,6 +2128,9 @@ export function DicomViewerApp() {
       alignViewportNullableStateMap(nextViewportIds, previous),
     );
     setViewportPresentationSyncCommandById((previous) =>
+      alignViewportNullableStateMap(nextViewportIds, previous),
+    );
+    setViewportMprCrosshairSyncCommandById((previous) =>
       alignViewportNullableStateMap(nextViewportIds, previous),
     );
     setDicomTagDialogViewportId((previous) =>
@@ -1631,7 +2148,9 @@ export function DicomViewerApp() {
     hierarchy,
     setDicomTagDialogViewportId,
     setMaximizedViewportId,
+    setMprViewportReferenceLineStateById,
     setSelectedViewportId,
+    setStackViewportReferenceLineStateById,
     setStackViewportPresentationStateById,
     setStackViewportRuntimeStateById,
     setViewportAnnotationsStateById,
@@ -1641,6 +2160,7 @@ export function DicomViewerApp() {
     setViewportInvertEnabled,
     setViewportModeById,
     setViewportMprLayoutIdById,
+    setViewportMprCrosshairSyncCommandById,
     setViewportPresentationSyncCommandById,
     setViewportStackNavigationCommandById,
     setViewportSequenceSyncCommandById,
@@ -1880,6 +2400,190 @@ export function DicomViewerApp() {
     manualSequenceSyncRequest,
   ]);
 
+  useEffect(() => {
+    if (
+      !referenceLinesEnabled ||
+      selectedViewportMode !== "mpr" ||
+      !referenceLineSourceViewportId ||
+      !referenceLineSourceState ||
+      referenceLineSourceState.status !== "ready" ||
+      !referenceLineSourceState.referencePointWorld
+    ) {
+      return;
+    }
+
+    const sourceSyncKey = `${referenceLineSourceViewportId}:${referenceLineSourceState.frameOfReferenceUID ?? "unknown"}:${referenceLineSourceState.lastChangeToken}`;
+    const nextSyncCommands: Record<
+      string,
+      ViewportMprCrosshairSyncCommand | null
+    > = {};
+
+    for (const targetViewportId of viewportIds) {
+      if (targetViewportId === referenceLineSourceViewportId) {
+        continue;
+      }
+
+      if (
+        (viewportModeById[targetViewportId] ?? DEFAULT_VIEWPORT_MODE) !==
+        "mpr"
+      ) {
+        continue;
+      }
+
+      const targetReferenceState =
+        mprViewportReferenceLineStateById[targetViewportId] ?? null;
+
+      if (!targetReferenceState || targetReferenceState.status !== "ready") {
+        continue;
+      }
+
+      if (
+        referenceLineSourceState.frameOfReferenceUID &&
+        targetReferenceState.frameOfReferenceUID &&
+        referenceLineSourceState.frameOfReferenceUID !==
+          targetReferenceState.frameOfReferenceUID
+      ) {
+        continue;
+      }
+
+      const processedSyncKey =
+        processedMprCrosshairSyncKeyByViewportRef.current[targetViewportId];
+      const nextProcessedSyncKey = `${sourceSyncKey}:${targetViewportId}`;
+
+      if (processedSyncKey === nextProcessedSyncKey) {
+        continue;
+      }
+
+      processedMprCrosshairSyncKeyByViewportRef.current[targetViewportId] =
+        nextProcessedSyncKey;
+      mprCrosshairSyncCommandIdRef.current += 1;
+      nextSyncCommands[targetViewportId] = {
+        id: mprCrosshairSyncCommandIdRef.current,
+        targetViewportKey: targetViewportId,
+        sourceViewportKey: referenceLineSourceViewportId,
+        frameOfReferenceUID: referenceLineSourceState.frameOfReferenceUID,
+        referencePointWorld: clonePoint3(
+          referenceLineSourceState.referencePointWorld,
+        ),
+      };
+    }
+
+    if (!Object.keys(nextSyncCommands).length) {
+      return;
+    }
+
+    setViewportMprCrosshairSyncCommandById((previous) => ({
+      ...previous,
+      ...nextSyncCommands,
+    }));
+  }, [
+    mprViewportReferenceLineStateById,
+    referenceLineSourceState,
+    referenceLineSourceViewportId,
+    referenceLinesEnabled,
+    selectedViewportMode,
+    setViewportMprCrosshairSyncCommandById,
+    viewportIds,
+    viewportModeById,
+  ]);
+
+  useEffect(() => {
+    if (
+      !referenceLinesEnabled ||
+      selectedViewportMode !== "mpr" ||
+      !referenceLineSourceViewportId ||
+      !referenceLineSourceState ||
+      referenceLineSourceState.status !== "ready"
+    ) {
+      return;
+    }
+
+    const sourceNavigationKey = `${referenceLineSourceViewportId}:${referenceLineSourceState.frameOfReferenceUID ?? "unknown"}:${referenceLineSourceState.lastChangeToken}`;
+    const nextNavigationCommands: Record<string, { id: number; targetViewportKey: string; frameIndex: number }> =
+      {};
+
+    for (const targetViewportId of viewportIds) {
+      if (targetViewportId === referenceLineSourceViewportId) {
+        continue;
+      }
+
+      if (
+        (viewportModeById[targetViewportId] ?? DEFAULT_VIEWPORT_MODE) !==
+        "stack"
+      ) {
+        continue;
+      }
+
+      const targetRuntimeState = stackViewportRuntimeStateById[targetViewportId];
+      const targetSeriesKey = viewportSeriesAssignments[targetViewportId];
+      const targetSeriesEntry =
+        targetSeriesKey != null
+          ? (seriesEntryMap.get(targetSeriesKey) ?? null)
+          : null;
+
+      if (
+        !targetRuntimeState ||
+        targetRuntimeState.status !== "ready" ||
+        !targetSeriesEntry
+      ) {
+        continue;
+      }
+
+      const targetFrameIndex = findNearestFrameIndexForReferenceLinePlane(
+        referenceLineSourceState,
+        targetSeriesEntry.series.images,
+      );
+
+      if (!targetFrameIndex) {
+        continue;
+      }
+
+      const processedNavigationKey =
+        processedMprReferenceNavigationKeyByViewportRef.current[
+          targetViewportId
+        ];
+      const nextProcessedNavigationKey = `${sourceNavigationKey}:${targetSeriesKey ?? "unknown"}:${targetFrameIndex}`;
+
+      if (processedNavigationKey === nextProcessedNavigationKey) {
+        continue;
+      }
+
+      processedMprReferenceNavigationKeyByViewportRef.current[targetViewportId] =
+        nextProcessedNavigationKey;
+
+      if (targetRuntimeState.currentFrameIndex === targetFrameIndex) {
+        continue;
+      }
+
+      stackNavigationCommandIdRef.current += 1;
+      nextNavigationCommands[targetViewportId] = {
+        id: stackNavigationCommandIdRef.current,
+        targetViewportKey: targetViewportId,
+        frameIndex: targetFrameIndex,
+      };
+    }
+
+    if (!Object.keys(nextNavigationCommands).length) {
+      return;
+    }
+
+    setViewportStackNavigationCommandById((previous) => ({
+      ...previous,
+      ...nextNavigationCommands,
+    }));
+  }, [
+    referenceLineSourceState,
+    referenceLineSourceViewportId,
+    referenceLinesEnabled,
+    selectedViewportMode,
+    seriesEntryMap,
+    setViewportStackNavigationCommandById,
+    stackViewportRuntimeStateById,
+    viewportIds,
+    viewportModeById,
+    viewportSeriesAssignments,
+  ]);
+
   if (loading) {
     return (
       <main className="viewer-page">
@@ -2037,6 +2741,7 @@ export function DicomViewerApp() {
             layoutId={effectiveViewportLayoutId}
             imageLayoutId={activeViewportImageLayoutId}
             mprLayoutId={activeViewportMprLayoutId}
+            mprSlabState={activeViewportMprSlabState}
             cineState={activeViewportCineState}
             cineEnabled={activeViewportCineEnabled}
             keyImageEnabled={activeViewportKeyImageEnabled}
@@ -2047,6 +2752,7 @@ export function DicomViewerApp() {
             crossStudyCalibrationCount={
               activeViewportCrossStudyCalibrationCount
             }
+            referenceLinesEnabled={referenceLinesEnabled}
             invertEnabled={activeViewportInvertEnabled}
             annotationCount={activeViewportAnnotationsState.entries.length}
             selectedAnnotationCount={
@@ -2057,6 +2763,14 @@ export function DicomViewerApp() {
             onLayoutChange={handleViewportLayoutChange}
             onImageLayoutChange={handleViewportImageLayoutChange}
             onMprLayoutChange={handleViewportMprLayoutChange}
+            onMprSlabModeChange={handleViewportMprSlabModeChange}
+            onMprSlabThicknessChange={handleViewportMprSlabThicknessChange}
+            onMprSlabOpenCustomThickness={
+              handleViewportMprSlabOpenCustomThickness
+            }
+            onMprSlabReset={handleViewportMprSlabReset}
+            onMprSlabApplyToAll={handleViewportMprSlabApplyToAll}
+            onMprSlabApplyToLinked={handleViewportMprSlabApplyToLinked}
             onCineTogglePlay={handleViewportCineTogglePlay}
             onCineSetFps={handleViewportCineSetFps}
             onCineToggleLoop={handleViewportCineToggleLoop}
@@ -2065,6 +2779,7 @@ export function DicomViewerApp() {
             onWindowPresetSelect={handleWindowPresetSelect}
             onViewAction={handleViewportViewAction}
             onAction={handleViewportAction}
+            onHistoryAction={handleViewportHistoryAction}
             onAnnotationManageAction={handleAnnotationManageAction}
             onOpenKeyImageList={() => setKeyImageListOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
@@ -2119,8 +2834,22 @@ export function DicomViewerApp() {
                         viewportMprLayoutIdById[viewportId] ??
                         DEFAULT_VIEWPORT_MPR_LAYOUT_ID
                       }
+                      mprSlabState={normalizeViewportMprSlabState(
+                        viewportMprSlabStateById[viewportId],
+                        viewerDefaultMprSlabState,
+                      )}
                       invertEnabled={viewportInvertEnabled[viewportId] ?? false}
                       overlaySettings={viewerSettings.viewportOverlay}
+                      referenceLinesEnabled={referenceLinesEnabled}
+                      isReferenceLineSource={
+                        referenceLinesEnabled &&
+                        referenceLineSourceViewportId === viewportId
+                      }
+                      crosshairSyncCommand={
+                        viewportMprCrosshairSyncCommandById[viewportId] ?? null
+                      }
+                      referenceLineSourceViewportId={referenceLineSourceViewportId}
+                      referenceLineSourceState={referenceLineSourceState}
                       annotationCommand={annotationCommand}
                       dicomTagDialogOpen={
                         dicomTagDialogViewportId === viewportId
@@ -2137,6 +2866,23 @@ export function DicomViewerApp() {
                           [viewportId]: state,
                         }));
                       }}
+                      onReferenceLineStateChange={(state) => {
+                        setMprViewportReferenceLineStateById((previous) => {
+                          if (
+                            areViewportReferenceLineStatesEqual(
+                              previous[viewportId],
+                              state,
+                            )
+                          ) {
+                            return previous;
+                          }
+
+                          return {
+                            ...previous,
+                            [viewportId]: state,
+                          };
+                        });
+                      }}
                     />
                   ) : (
                     <StackViewport
@@ -2151,6 +2897,13 @@ export function DicomViewerApp() {
                       }
                       invertEnabled={viewportInvertEnabled[viewportId] ?? false}
                       overlaySettings={viewerSettings.viewportOverlay}
+                      referenceLinesEnabled={referenceLinesEnabled}
+                      isReferenceLineSource={
+                        referenceLinesEnabled &&
+                        referenceLineSourceViewportId === viewportId
+                      }
+                      referenceLineSourceViewportId={referenceLineSourceViewportId}
+                      referenceLineSourceState={referenceLineSourceState}
                       annotationCommand={annotationCommand}
                       viewCommand={viewCommand}
                       cineState={normalizeViewportCineState(
@@ -2199,6 +2952,23 @@ export function DicomViewerApp() {
                       onRuntimeStateChange={(state) => {
                         setStackViewportRuntimeStateById((previous) => {
                           if (previous[viewportId] === state) {
+                            return previous;
+                          }
+
+                          return {
+                            ...previous,
+                            [viewportId]: state,
+                          };
+                        });
+                      }}
+                      onReferenceLineStateChange={(state) => {
+                        setStackViewportReferenceLineStateById((previous) => {
+                          if (
+                            areViewportReferenceLineStatesEqual(
+                              previous[viewportId],
+                              state,
+                            )
+                          ) {
                             return previous;
                           }
 

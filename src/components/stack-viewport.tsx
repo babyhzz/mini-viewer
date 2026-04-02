@@ -54,6 +54,14 @@ import {
 } from "@/lib/viewports/image-layouts";
 import type { ViewportCineState } from "@/lib/viewports/cine";
 import {
+  clonePoint3Quad,
+  computeViewportReferenceLineSegment,
+  getPoint3QuadCenter,
+  isFinitePoint3Quad,
+  type StackViewportReferenceLineState,
+  type ViewportReferenceLineSegment,
+} from "@/lib/viewports/reference-lines";
+import {
   encodeViewportSequenceSyncState,
   type StackViewportPresentationSource,
   type StackViewportPresentationState,
@@ -86,6 +94,10 @@ interface StackViewportProps {
   imageLayoutId: ViewportImageLayoutId;
   invertEnabled: boolean;
   overlaySettings: ViewportOverlaySettings;
+  referenceLinesEnabled: boolean;
+  isReferenceLineSource?: boolean;
+  referenceLineSourceViewportId?: string | null;
+  referenceLineSourceState?: StackViewportReferenceLineState | null;
   annotationCommand?: ViewportAnnotationCommand | null;
   viewCommand?: ViewportViewCommand | null;
   cineState: ViewportCineState;
@@ -104,6 +116,9 @@ interface StackViewportProps {
   onCinePlaybackStop?: (viewportKey: string) => void;
   onAnnotationsChange?: (state: ViewportAnnotationsState) => void;
   onRuntimeStateChange?: (state: StackViewportRuntimeState | null) => void;
+  onReferenceLineStateChange?: (
+    state: StackViewportReferenceLineState | null,
+  ) => void;
   onPresentationStateChange?: (
     state: StackViewportPresentationState | null,
   ) => void;
@@ -986,6 +1001,10 @@ export function StackViewport({
   imageLayoutId,
   invertEnabled,
   overlaySettings,
+  referenceLinesEnabled,
+  isReferenceLineSource = false,
+  referenceLineSourceViewportId = null,
+  referenceLineSourceState = null,
   annotationCommand = null,
   viewCommand = null,
   cineState,
@@ -1004,6 +1023,7 @@ export function StackViewport({
   onCinePlaybackStop,
   onAnnotationsChange,
   onRuntimeStateChange,
+  onReferenceLineStateChange,
   onPresentationStateChange,
 }: StackViewportProps) {
   const imageLayoutGridRef = useRef<HTMLDivElement | null>(null);
@@ -1013,13 +1033,19 @@ export function StackViewport({
   const seriesRef = useRef(series);
   const onAnnotationsChangeRef = useRef(onAnnotationsChange);
   const onRuntimeStateChangeRef = useRef(onRuntimeStateChange);
+  const onReferenceLineStateChangeRef = useRef(onReferenceLineStateChange);
   const onPresentationStateChangeRef = useRef(onPresentationStateChange);
+  const emitReferenceLineStateRef = useRef<
+    (frameIndexOverride?: number) => void
+  >(() => undefined);
+  const syncReferenceLineOverlayRef = useRef<() => void>(() => undefined);
   const lastReportedParentAnnotationStateRef =
     useRef<ViewportAnnotationsState | null>(
       createEmptyViewportAnnotationsState(),
     );
   const lastReportedPresentationStateRef =
     useRef<StackViewportPresentationState | null>(null);
+  const referenceLineChangeTokenRef = useRef(0);
   const coreRef = useRef<typeof import("@cornerstonejs/core") | null>(null);
   const viewportRef = useRef<
     import("@cornerstonejs/core").Types.IStackViewport | null
@@ -1064,6 +1090,8 @@ export function StackViewport({
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [viewportRuntimeReady, setViewportRuntimeReady] = useState(false);
   const [viewportRuntimeSeed, setViewportRuntimeSeed] = useState(0);
+  const [referenceLineSegment, setReferenceLineSegment] =
+    useState<ViewportReferenceLineSegment | null>(null);
   const wheelDeltaRef = useRef(0);
   const lastWheelAtRef = useRef(0);
   const lastScrollAtRef = useRef(0);
@@ -1096,6 +1124,10 @@ export function StackViewport({
   useEffect(() => {
     onRuntimeStateChangeRef.current = onRuntimeStateChange;
   }, [onRuntimeStateChange]);
+
+  useEffect(() => {
+    onReferenceLineStateChangeRef.current = onReferenceLineStateChange;
+  }, [onReferenceLineStateChange]);
 
   useEffect(() => {
     onPresentationStateChangeRef.current = onPresentationStateChange;
@@ -1426,6 +1458,107 @@ export function StackViewport({
     [],
   );
 
+  const emitReferenceLineState = useCallback((frameIndexOverride?: number) => {
+    if (!onReferenceLineStateChangeRef.current) {
+      return;
+    }
+
+    const core = coreRef.current;
+    const viewport = viewportRef.current;
+    const currentSeries = seriesRef.current;
+    const frameIndex = frameIndexOverride ?? currentImageIndex;
+
+    if (
+      !core ||
+      !viewport ||
+      !currentSeries ||
+      !currentSeries.images.length ||
+      frameIndex < 1 ||
+      hasMontageImageLayout
+    ) {
+      onReferenceLineStateChangeRef.current(null);
+      return;
+    }
+
+    const currentImage = currentSeries.images[frameIndex - 1] ?? null;
+    const imageCornersWorld = core.utilities.getViewportImageCornersInWorld(
+      viewport,
+    );
+
+    if (!currentImage || !isFinitePoint3Quad(imageCornersWorld)) {
+      onReferenceLineStateChangeRef.current(null);
+      return;
+    }
+
+    referenceLineChangeTokenRef.current += 1;
+    onReferenceLineStateChangeRef.current({
+      status: "ready",
+      frameOfReferenceUID:
+        currentImage.frameOfReferenceUID ?? viewport.getFrameOfReferenceUID() ?? null,
+      imageCornersWorld: clonePoint3Quad(imageCornersWorld),
+      referencePointWorld: getPoint3QuadCenter(imageCornersWorld),
+      sourcePaneId: null,
+      lastChangeToken: referenceLineChangeTokenRef.current,
+    });
+  }, [currentImageIndex, hasMontageImageLayout]);
+
+  const syncReferenceLineOverlay = useCallback(() => {
+    const viewport = viewportRef.current;
+
+    if (
+      !referenceLinesEnabled ||
+      !referenceLineSourceViewportId ||
+      referenceLineSourceViewportId === viewportKey ||
+      !viewport ||
+      !viewportRuntimeReady ||
+      !containerReady ||
+      hasMontageImageLayout
+    ) {
+      setReferenceLineSegment((previous) => (previous ? null : previous));
+      return;
+    }
+
+    const nextSegment = computeViewportReferenceLineSegment(
+      referenceLineSourceState,
+      viewport,
+    );
+
+    setReferenceLineSegment((previous) => {
+      if (!previous && !nextSegment) {
+        return previous;
+      }
+
+      if (
+        previous &&
+        nextSegment &&
+        previous.startCanvas[0] === nextSegment.startCanvas[0] &&
+        previous.startCanvas[1] === nextSegment.startCanvas[1] &&
+        previous.endCanvas[0] === nextSegment.endCanvas[0] &&
+        previous.endCanvas[1] === nextSegment.endCanvas[1]
+      ) {
+        return previous;
+      }
+
+      return nextSegment;
+    });
+  }, [
+    containerReady,
+    hasMontageImageLayout,
+    referenceLineSourceState,
+    referenceLineSourceViewportId,
+    referenceLinesEnabled,
+    viewportKey,
+    viewportRuntimeReady,
+  ]);
+
+  useEffect(() => {
+    emitReferenceLineStateRef.current = emitReferenceLineState;
+  }, [emitReferenceLineState]);
+
+  useEffect(() => {
+    syncReferenceLineOverlayRef.current = syncReferenceLineOverlay;
+  }, [syncReferenceLineOverlay]);
+
   useEffect(() => {
     const element = elementRef.current;
 
@@ -1474,6 +1607,24 @@ export function StackViewport({
   }, [activeTool]);
 
   useEffect(() => {
+    if (!viewportRuntimeReady || !containerReady) {
+      return;
+    }
+
+    emitReferenceLineState();
+  }, [
+    containerReady,
+    emitReferenceLineState,
+    viewportRuntimeReady,
+    viewportSize.height,
+    viewportSize.width,
+  ]);
+
+  useEffect(() => {
+    syncReferenceLineOverlay();
+  }, [syncReferenceLineOverlay]);
+
+  useEffect(() => {
     invertEnabledRef.current = invertEnabled;
 
     if (!viewportRef.current || !coreRef.current) {
@@ -1518,6 +1669,8 @@ export function StackViewport({
       setCurrentImageIndex(nextFrameIndex);
       setScrollIndicatorFrameIndex(nextFrameIndex);
       emitRuntimeState("ready", nextFrameIndex, changeSource);
+      emitReferenceLineStateRef.current(nextFrameIndex);
+      syncReferenceLineOverlayRef.current();
     };
     const handleStackViewportScroll = (event: Event) => {
       const customEvent = event as CustomEvent<{ newImageIdIndex: number }>;
@@ -1539,6 +1692,8 @@ export function StackViewport({
         setViewFlipHorizontal,
         setViewFlipVertical,
       );
+      emitReferenceLineStateRef.current();
+      syncReferenceLineOverlayRef.current();
 
       if (suppressPresentationDispatchRef.current) {
         return;
@@ -1765,12 +1920,15 @@ export function StackViewport({
       setViewFlipVertical(DEFAULT_VIEW_FLIP);
       setVoiWindowWidth(DEFAULT_VOI_WINDOW_WIDTH);
       setVoiWindowCenter(DEFAULT_VOI_WINDOW_CENTER);
+      setReferenceLineSegment(null);
       onAnnotationsChangeRef.current?.({
         entries: [],
         selectedAnnotationUIDs: [],
       });
       lastReportedParentAnnotationStateRef.current =
         createEmptyViewportAnnotationsState();
+      referenceLineChangeTokenRef.current = 0;
+      onReferenceLineStateChangeRef.current?.(null);
       lastReportedPresentationStateRef.current = null;
       presentationChangeTokenRef.current = 0;
       pendingPresentationSourceRef.current = null;
@@ -2057,6 +2215,7 @@ export function StackViewport({
         setSelectedAnnotationCount(0);
         setVoiWindowWidth(DEFAULT_VOI_WINDOW_WIDTH);
         setVoiWindowCenter(DEFAULT_VOI_WINDOW_CENTER);
+        setReferenceLineSegment(null);
         onAnnotationsChangeRef.current?.({
           entries: [],
           selectedAnnotationUIDs: [],
@@ -2068,9 +2227,11 @@ export function StackViewport({
         pendingPresentationSourceRef.current = null;
         transientRecoveryAttemptsRef.current = 0;
         onRuntimeStateChangeRef.current?.(null);
+        onReferenceLineStateChangeRef.current?.(null);
         onPresentationStateChangeRef.current?.(null);
         lastReportedPresentationStateRef.current = null;
         presentationChangeTokenRef.current = 0;
+        referenceLineChangeTokenRef.current = 0;
         return;
       }
 
@@ -2082,14 +2243,17 @@ export function StackViewport({
       setViewRotation(DEFAULT_VIEW_ROTATION);
       setViewFlipHorizontal(DEFAULT_VIEW_FLIP);
       setViewFlipVertical(DEFAULT_VIEW_FLIP);
+      setReferenceLineSegment(null);
       initialCameraRef.current = null;
       wheelDeltaRef.current = 0;
       lastWheelAtRef.current = 0;
       lastScrollAtRef.current = 0;
       onRuntimeStateChangeRef.current?.(null);
+      onReferenceLineStateChangeRef.current?.(null);
       onPresentationStateChangeRef.current?.(null);
       lastReportedPresentationStateRef.current = null;
       presentationChangeTokenRef.current = 0;
+      referenceLineChangeTokenRef.current = 0;
       pendingPresentationSourceRef.current = "load";
 
       try {
@@ -2137,13 +2301,14 @@ export function StackViewport({
           setViewFlipVertical,
         );
         transientRecoveryAttemptsRef.current = 0;
-        emitPresentationState("load");
-
         if (!cancelled) {
           const nextFrameIndex = currentViewport.getCurrentImageIdIndex() + 1;
 
           setCurrentImageIndex(nextFrameIndex);
           setScrollIndicatorFrameIndex(nextFrameIndex);
+          emitReferenceLineStateRef.current(nextFrameIndex);
+          syncReferenceLineOverlayRef.current();
+          emitPresentationState("load");
           if (pendingNavigationSourceRef.current === "load") {
             pendingNavigationSourceRef.current = null;
             emitRuntimeState("ready", nextFrameIndex, "load");
@@ -2171,8 +2336,10 @@ export function StackViewport({
 
         setStatus("error");
         onRuntimeStateChangeRef.current?.(null);
+        onReferenceLineStateChangeRef.current?.(null);
         onPresentationStateChangeRef.current?.(null);
         lastReportedPresentationStateRef.current = null;
+        referenceLineChangeTokenRef.current = 0;
       }
     }
 
@@ -2464,6 +2631,7 @@ export function StackViewport({
   useEffect(() => {
     return () => {
       onRuntimeStateChangeRef.current?.(null);
+      onReferenceLineStateChangeRef.current?.(null);
       onPresentationStateChangeRef.current?.(null);
     };
   }, []);
@@ -2505,6 +2673,9 @@ export function StackViewport({
       data-annotation-total={getTotalViewportAnnotationCount(annotationCounts)}
       data-selected-annotation-count={selectedAnnotationCount}
       data-viewport-size={`${viewportSize.width}x${viewportSize.height}`}
+      data-reference-lines-enabled={String(referenceLinesEnabled)}
+      data-reference-line-source={String(isReferenceLineSource)}
+      data-reference-line-visible={String(Boolean(referenceLineSegment))}
       onPointerDownCapture={handleViewportPointerDownCapture}
       onPointerDown={handleViewportPointerDown}
       onPointerMove={handleViewportPointerMove}
@@ -2585,6 +2756,27 @@ export function StackViewport({
           overlayValueMap={overlayValueMap}
           testIds={VIEWPORT_OVERLAY_TEST_IDS}
         />
+      ) : null}
+      {referenceLineSegment ? (
+        <svg
+          className="viewport-reference-lines"
+          data-testid="viewport-reference-line-layer"
+          aria-hidden="true"
+          viewBox={`0 0 ${Math.max(viewportSize.width, 1)} ${Math.max(
+            viewportSize.height,
+            1,
+          )}`}
+          preserveAspectRatio="none"
+        >
+          <line
+            className="viewport-reference-line"
+            data-testid="viewport-reference-line"
+            x1={referenceLineSegment.startCanvas[0]}
+            y1={referenceLineSegment.startCanvas[1]}
+            x2={referenceLineSegment.endCanvas[0]}
+            y2={referenceLineSegment.endCanvas[1]}
+          />
+        </svg>
       ) : null}
       {status === "loading" ? (
         <div className="status-layer">
