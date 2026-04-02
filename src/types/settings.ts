@@ -28,6 +28,8 @@ export type ToolbarShortcutCommandId =
   | "rectangleRoi"
   | "ellipseRoi"
   | "circleRoi"
+  | "undo"
+  | "redo"
   | "invert"
   | "keyImage"
   | "dicomTag"
