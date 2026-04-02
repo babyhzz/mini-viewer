@@ -1,11 +1,20 @@
 import type { DicomImageNode } from "@/types/dicom";
 
-export type ViewportSequenceSyncType = "sameStudy" | "crossStudy";
-export type StackViewportNavigationSource = "load" | "user" | "sync";
+export type ViewportSequenceSyncType =
+  | "sameStudy"
+  | "crossStudy"
+  | "display";
+export type ViewportSliceSyncType = Exclude<
+  ViewportSequenceSyncType,
+  "display"
+>;
+export type StackViewportNavigationSource = "load" | "user" | "sync" | "cine";
+export type StackViewportPresentationSource = "load" | "user" | "sync";
 
 export interface ViewportSequenceSyncState {
   sameStudy: boolean;
   crossStudy: boolean;
+  display: boolean;
 }
 
 export interface StackViewportRuntimeState {
@@ -21,8 +30,36 @@ export interface ViewportSequenceSyncCommand {
   targetViewportKey: string;
   sourceViewportKey: string;
   frameIndex: number;
-  syncType: ViewportSequenceSyncType;
+  syncType: ViewportSliceSyncType;
   calibrationPairKey?: string;
+}
+
+export interface ViewportPresentationSyncCommand {
+  id: number;
+  targetViewportKey: string;
+  sourceViewportKey: string;
+  viewPresentation: {
+    zoom: number | null;
+    pan: [number, number] | null;
+  } | null;
+  voiRange: {
+    lower: number;
+    upper: number;
+  } | null;
+}
+
+export interface StackViewportPresentationState {
+  status: "idle" | "loading" | "ready" | "error";
+  viewPresentation: {
+    zoom: number | null;
+    pan: [number, number] | null;
+  } | null;
+  voiRange: {
+    lower: number;
+    upper: number;
+  } | null;
+  lastChangeToken: number;
+  lastChangeSource: StackViewportPresentationSource;
 }
 
 export interface CrossStudyCalibration {
@@ -55,6 +92,7 @@ const PARALLEL_SLICE_NORMAL_THRESHOLD = 0.995;
 export const DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE: ViewportSequenceSyncState = {
   sameStudy: false,
   crossStudy: false,
+  display: false,
 };
 
 function isFiniteNumber(value: unknown): value is number {
@@ -104,7 +142,15 @@ function normalize(vector: Point3): Point3 | null {
 }
 
 export function getViewportSequenceSyncTypeLabel(type: ViewportSequenceSyncType) {
-  return type === "sameStudy" ? "同检查同步" : "跨检查同步";
+  if (type === "sameStudy") {
+    return "同检查同步";
+  }
+
+  if (type === "crossStudy") {
+    return "跨检查同步";
+  }
+
+  return "显示同步";
 }
 
 export function getEnabledViewportSequenceSyncTypes(
@@ -124,13 +170,29 @@ export function getEnabledViewportSequenceSyncTypes(
     enabledTypes.push("crossStudy");
   }
 
+  if (state.display) {
+    enabledTypes.push("display");
+  }
+
   return enabledTypes;
 }
 
 export function hasEnabledViewportSequenceSync(
   state: ViewportSequenceSyncState | null | undefined,
 ) {
+  return Boolean(state?.sameStudy || state?.crossStudy || state?.display);
+}
+
+export function hasEnabledViewportSliceSync(
+  state: ViewportSequenceSyncState | null | undefined,
+) {
   return Boolean(state?.sameStudy || state?.crossStudy);
+}
+
+export function hasEnabledViewportDisplaySync(
+  state: ViewportSequenceSyncState | null | undefined,
+) {
+  return Boolean(state?.display);
 }
 
 export function toggleViewportSequenceSyncType(

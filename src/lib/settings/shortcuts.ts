@@ -150,6 +150,13 @@ export const TOOLBAR_SHORTCUT_COMMAND_DEFINITIONS: ToolbarShortcutCommandDefinit
       defaultBinding: createToolbarShortcutBinding("KeyI"),
     },
     {
+      id: "keyImage",
+      categoryId: "actions",
+      label: "关键图像",
+      description: "收藏或取消当前切片为关键图像",
+      defaultBinding: createToolbarShortcutBinding("KeyK"),
+    },
+    {
       id: "dicomTag",
       categoryId: "actions",
       label: "Dicom Tag",
@@ -202,9 +209,9 @@ export function isToolbarShortcutToolCommand(
   commandId: ToolbarShortcutCommandId,
 ): commandId is Exclude<
   ToolbarShortcutCommandId,
-  "invert" | "dicomTag" | "annotationList" | "settings"
+  "invert" | "keyImage" | "dicomTag" | "annotationList" | "settings"
 > {
-  return !["invert", "dicomTag", "annotationList", "settings"].includes(
+  return !["invert", "keyImage", "dicomTag", "annotationList", "settings"].includes(
     commandId,
   );
 }

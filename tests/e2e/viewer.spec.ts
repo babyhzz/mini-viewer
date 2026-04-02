@@ -17,7 +17,7 @@ async function waitForViewerReady(page: import("@playwright/test").Page) {
 
 async function toggleSequenceSync(
   page: import("@playwright/test").Page,
-  syncType: "sameStudy" | "crossStudy",
+  syncType: "sameStudy" | "crossStudy" | "display",
 ) {
   await page.getByTestId("viewport-sequence-sync-button").click();
   await page.getByTestId(`viewport-sequence-sync-option-${syncType}`).click();
@@ -162,6 +162,7 @@ test.describe("DICOM viewer smoke coverage", () => {
     );
     expect(payload.toolbarShortcuts.schemaVersion).toBe(1);
     expect(payload.toolbarShortcuts.bindings).toHaveProperty("select");
+    expect(payload.toolbarShortcuts.bindings.keyImage?.code).toBe("KeyK");
     expect(payload.toolbarShortcuts.bindings.dicomTag?.code).toBe("F2");
     expect(payload.toolbarShortcuts.bindings).toHaveProperty("settings");
   });
@@ -233,9 +234,11 @@ test.describe("DICOM viewer smoke coverage", () => {
       "true",
     );
     await expect(page.getByTestId("viewport-tool-zoom")).toBeVisible();
+    await expect(page.getByTestId("viewport-tool-keyImage")).toBeVisible();
     await expect(
       page.getByTestId("viewport-window-preset-button"),
     ).toBeVisible();
+    await expect(page.getByTestId("viewport-cine-button")).toBeVisible();
     await expect(page.getByTestId("viewport-view-action-fit")).toBeVisible();
     await expect(page.getByTestId("viewport-view-action-reset")).toBeVisible();
     await expect(
@@ -260,6 +263,9 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(
       page.getByTestId("viewport-annotation-list-button"),
     ).toBeVisible();
+    await expect(
+      page.getByTestId("viewport-key-image-list-button"),
+    ).toBeVisible();
     await expect(page.getByTestId("viewport-settings-button")).toBeVisible();
     await expect(page.getByTestId("viewport-overlay-top-left")).toBeVisible();
     await expect(page.getByTestId("viewport-overlay-top-right")).toBeVisible();
@@ -274,6 +280,10 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(viewportStage).toHaveAttribute(
       "data-viewport-selected",
       "true",
+    );
+    await expect(page.getByTestId("viewport-tool-keyImage")).toHaveAttribute(
+      "aria-pressed",
+      "false",
     );
     await expect(viewportStage).toHaveAttribute(
       "data-sequence-sync-state",
@@ -377,6 +387,113 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(closeButton).toBeVisible();
     await closeButton.click();
     await expect(page.getByText("Viewer Settings")).toHaveCount(0);
+  });
+
+  test("cine tool can play and pause stack playback on the selected viewport", async ({
+    page,
+  }) => {
+    await waitForViewerReady(page);
+
+    const seriesCards = page.getByTestId("series-card");
+    const viewportStage = page.getByTestId("viewport-stage");
+    let cineCardIndex = -1;
+
+    for (let index = 0; index < (await seriesCards.count()); index += 1) {
+      const imageCount = Number(
+        (await seriesCards.nth(index).getAttribute("data-image-count")) ?? "0",
+      );
+
+      if (imageCount > 1) {
+        cineCardIndex = index;
+        break;
+      }
+    }
+
+    expect(cineCardIndex).toBeGreaterThanOrEqual(0);
+
+    await seriesCards.nth(cineCardIndex).click();
+    await expect(viewportStage).toHaveAttribute("data-status", "ready", {
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId("viewport-cine-button")).toBeEnabled();
+
+    await page.getByTestId("viewport-cine-button").click();
+    await page.getByTestId("viewport-cine-option-loop").click();
+    await expect(viewportStage).toHaveAttribute("data-cine-loop", "false");
+
+    await page.getByTestId("viewport-cine-button").click();
+    await page.getByTestId("viewport-cine-option-fps-16").click();
+    await expect(viewportStage).toHaveAttribute("data-cine-fps", "16");
+
+    const initialFrameIndex = Number(
+      (await viewportStage.getAttribute("data-frame-index")) ?? "0",
+    );
+
+    expect(initialFrameIndex).toBeGreaterThan(0);
+
+    await page.getByTestId("viewport-cine-button").click();
+    await page.getByTestId("viewport-cine-option-toggle").click();
+    await expect(viewportStage).toHaveAttribute("data-cine-playing", "true");
+
+    await expect
+      .poll(
+        async () =>
+          Number((await viewportStage.getAttribute("data-frame-index")) ?? "0"),
+        {
+          timeout: 4_000,
+        },
+      )
+      .toBeGreaterThan(initialFrameIndex);
+
+    await page.getByTestId("viewport-cine-button").click();
+    await page.getByTestId("viewport-cine-option-toggle").click();
+    await expect(viewportStage).toHaveAttribute("data-cine-playing", "false");
+  });
+
+  test("key image action bookmarks the current frame and the drawer can jump to it", async ({
+    page,
+  }) => {
+    await waitForViewerReady(page);
+
+    const seriesCards = page.getByTestId("series-card");
+    const viewportStage = page.getByTestId("viewport-stage");
+    let targetCardIndex = -1;
+
+    for (let index = 0; index < (await seriesCards.count()); index += 1) {
+      const imageCount = Number(
+        (await seriesCards.nth(index).getAttribute("data-image-count")) ?? "0",
+      );
+
+      if (imageCount > 2) {
+        targetCardIndex = index;
+        break;
+      }
+    }
+
+    expect(targetCardIndex).toBeGreaterThanOrEqual(0);
+
+    await seriesCards.nth(targetCardIndex).click();
+    await expect(viewportStage).toHaveAttribute("data-status", "ready", {
+      timeout: 60_000,
+    });
+
+    await page.getByTestId("viewport-tool-keyImage").click();
+    await expect(page.getByTestId("viewport-tool-keyImage")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await scrollViewportFrames(page, viewportStage, 320, 2);
+    await expect(viewportStage).not.toHaveAttribute("data-frame-index", "1");
+
+    await page.getByTestId("viewport-key-image-list-button").click();
+    await expect(page.getByTestId("key-image-drawer")).toBeVisible();
+    await expect(page.getByTestId("key-image-item")).toHaveCount(1);
+    await page.getByTestId("key-image-select-1").click();
+    await expect(viewportStage).toHaveAttribute("data-frame-index", "1");
+    await page.getByTestId("key-image-delete-1").click();
+    await expect(page.getByTestId("key-image-empty")).toBeVisible();
+    await page.getByTestId("key-image-close").click();
   });
 
   test("custom toolbar shortcuts trigger viewer commands", async ({
@@ -816,6 +933,79 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(viewportStage).toHaveAttribute(
       "data-sequence-sync-state",
       "off",
+    );
+  });
+
+  test("display sync propagates zoom pan and VOI presentation", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await waitForViewerReady(page);
+
+    await page.getByTestId("viewport-layout-button").click();
+    await page.getByTestId("viewport-layout-option-2x1").click();
+
+    const firstViewportStage = page
+      .getByTestId("viewport-slot-viewport-1")
+      .getByTestId("viewport-stage");
+    const secondViewportStage = page
+      .getByTestId("viewport-slot-viewport-2")
+      .getByTestId("viewport-stage");
+
+    await expect(firstViewportStage).toHaveAttribute("data-status", "ready", {
+      timeout: 60_000,
+    });
+    await expect(secondViewportStage).toHaveAttribute("data-status", "ready", {
+      timeout: 60_000,
+    });
+
+    await firstViewportStage.click({
+      position: {
+        x: 24,
+        y: 24,
+      },
+    });
+    await toggleSequenceSync(page, "display");
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "display",
+    );
+
+    await secondViewportStage.click({
+      position: {
+        x: 24,
+        y: 24,
+      },
+    });
+    await toggleSequenceSync(page, "display");
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-sequence-sync-state",
+      "display",
+    );
+
+    await firstViewportStage.click({
+      position: {
+        x: 24,
+        y: 24,
+      },
+    });
+    await selectWindowPreset(page, "lung");
+
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-voi-window-width",
+      "1500.00",
+    );
+    await expect(firstViewportStage).toHaveAttribute(
+      "data-voi-window-center",
+      "-600.00",
+    );
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-voi-window-width",
+      "1500.00",
+    );
+    await expect(secondViewportStage).toHaveAttribute(
+      "data-voi-window-center",
+      "-600.00",
     );
   });
 

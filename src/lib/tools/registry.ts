@@ -15,9 +15,14 @@ export type ViewportTool =
   | "rectangleRoi"
   | "ellipseRoi"
   | "circleRoi";
-export type ViewportAction = "invert" | "dicomTag" | "annotationList";
+export type ViewportAction =
+  | "invert"
+  | "keyImage"
+  | "dicomTag"
+  | "annotationList";
 export type ViewportToolbarMenu =
   | "windowPreset"
+  | "cine"
   | "layout"
   | "imageLayout"
   | "mprLayout"
@@ -42,6 +47,7 @@ export type ViewportToolbarIconKey =
   | "zoom"
   | "windowLevel"
   | "windowPreset"
+  | "cine"
   | "fit"
   | "reset"
   | "rotateRight"
@@ -54,6 +60,8 @@ export type ViewportToolbarIconKey =
   | "measure"
   | "roi"
   | "invert"
+  | "keyImage"
+  | "keyImageList"
   | "dicomTag"
   | "annotationManage"
   | "annotationList";
@@ -268,6 +276,11 @@ const viewportActionDefinitions: Record<
     label: "反色",
     hint: "单击切换黑白反色",
   },
+  keyImage: {
+    id: "keyImage",
+    label: "关键图像",
+    hint: "收藏或取消当前切片为关键图像",
+  },
   dicomTag: {
     id: "dicomTag",
     label: "Dicom Tag",
@@ -319,6 +332,11 @@ const viewportToolbarMenuDefinitions: Record<
     id: "windowPreset",
     label: "窗宽预设",
     hint: "切换当前视口的窗宽窗位预设",
+  },
+  cine: {
+    id: "cine",
+    label: "Cine",
+    hint: "播放、暂停和配置当前视口的 Cine",
   },
   layout: {
     id: "layout",
@@ -404,6 +422,13 @@ export const viewportToolbarItems: ViewportToolbarItemDefinition[] = [
     iconKey: "windowPreset",
   },
   {
+    id: "cine",
+    kind: "menu",
+    label: "Cine",
+    hint: viewportToolbarMenuDefinitions.cine.hint,
+    iconKey: "cine",
+  },
+  {
     id: "measure",
     kind: "group",
     label: "测量",
@@ -423,6 +448,13 @@ export const viewportToolbarItems: ViewportToolbarItemDefinition[] = [
     label: "反色",
     hint: viewportActionDefinitions.invert.hint,
     iconKey: "invert",
+  },
+  {
+    id: "keyImage",
+    kind: "action",
+    label: "关键图像",
+    hint: viewportActionDefinitions.keyImage.hint,
+    iconKey: "keyImage",
   },
   {
     id: "fit",

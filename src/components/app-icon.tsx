@@ -16,6 +16,7 @@ export type AppIconName =
   | "arrow-up"
   | "caret-right-fill"
   | "chevron-down"
+  | "cine"
   | "circleRoi"
   | "dicomTag"
   | "ellipseRoi"
@@ -27,6 +28,8 @@ export type AppIconName =
   | "freehand"
   | "imageLayout"
   | "invert"
+  | "keyImage"
+  | "keyImageList"
   | "keyboard"
   | "layout"
   | "length"
@@ -181,6 +184,15 @@ const icons: Record<AppIconName, ReactNode> = {
       <StrokePath d="M8 15H13" />
     </>
   ),
+  cine: (
+    <>
+      <AccentRect x="7" y="8" width="10" height="8" rx="1" />
+      <StrokeRect x="5" y="6" width="14" height="12" rx="1.3" />
+      <StrokePath d="M8 6V18" />
+      <StrokePath d="M16 6V18" />
+      <path d="M10.3 9.35L14.85 12L10.3 14.65V9.35Z" fill="currentColor" />
+    </>
+  ),
   fit: (
     <>
       <AccentRect x="9" y="9" width="6" height="6" rx="1" />
@@ -332,6 +344,23 @@ const icons: Record<AppIconName, ReactNode> = {
       <path d="M12 4C7.58 4 4 7.58 4 12C4 16.42 7.58 20 12 20V4Z" fill="currentColor" opacity="0.2" />
       <StrokeCircle cx="12" cy="12" r="8" />
       <StrokePath d="M12 4V20" />
+    </>
+  ),
+  keyImage: (
+    <>
+      <AccentPath d="M8 5.5H16V18L12 15.4L8 18V5.5Z" />
+      <StrokePath d="M8 5.5H16V18L12 15.4L8 18V5.5Z" />
+      <StrokePath d="M10 8.6H14" />
+    </>
+  ),
+  keyImageList: (
+    <>
+      <AccentRect x="6" y="6" width="12" height="12" rx="1.2" />
+      <StrokeRect x="5" y="5" width="14" height="14" rx="1.2" />
+      <StrokePath d="M9.6 8.2H15" />
+      <StrokePath d="M9.6 15.7H15" />
+      <path d="M7.1 7.8H8.9V12.2L8 11.55L7.1 12.2V7.8Z" fill="currentColor" />
+      <path d="M7.1 13.2H8.9V17.1L8 16.45L7.1 17.1V13.2Z" fill="currentColor" opacity="0.86" />
     </>
   ),
   dicomTag: (

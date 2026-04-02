@@ -52,9 +52,13 @@ import {
   getViewportImageLayoutDefinition,
   type ViewportImageLayoutId,
 } from "@/lib/viewports/image-layouts";
+import type { ViewportCineState } from "@/lib/viewports/cine";
 import {
   encodeViewportSequenceSyncState,
+  type StackViewportPresentationSource,
+  type StackViewportPresentationState,
   type StackViewportNavigationSource,
+  type ViewportPresentationSyncCommand,
   type StackViewportRuntimeState,
   type ViewportSequenceSyncCommand,
   type ViewportSequenceSyncState,
@@ -63,6 +67,7 @@ import {
   getViewportWindowPresetDefinition,
   type ViewportViewCommand,
 } from "@/lib/viewports/view-commands";
+import type { ViewportStackNavigationCommand } from "@/lib/viewports/stack-navigation";
 import type {
   DicomImageNode,
   DicomSeriesNode,
@@ -83,8 +88,11 @@ interface StackViewportProps {
   overlaySettings: ViewportOverlaySettings;
   annotationCommand?: ViewportAnnotationCommand | null;
   viewCommand?: ViewportViewCommand | null;
+  cineState: ViewportCineState;
+  navigationCommand?: ViewportStackNavigationCommand | null;
   sequenceSyncState?: ViewportSequenceSyncState;
   sequenceSyncCommand?: ViewportSequenceSyncCommand | null;
+  presentationSyncCommand?: ViewportPresentationSyncCommand | null;
   crossStudyCalibrationCount?: number;
   dicomTagDialogOpen?: boolean;
   isSelected: boolean;
@@ -93,8 +101,12 @@ interface StackViewportProps {
   onSelect: (viewportKey: string) => void;
   onCellSelect?: (viewportKey: string, cellIndex: number) => void;
   onToggleMaximize?: (viewportKey: string) => void;
+  onCinePlaybackStop?: (viewportKey: string) => void;
   onAnnotationsChange?: (state: ViewportAnnotationsState) => void;
   onRuntimeStateChange?: (state: StackViewportRuntimeState | null) => void;
+  onPresentationStateChange?: (
+    state: StackViewportPresentationState | null,
+  ) => void;
 }
 const WHEEL_DELTA_THRESHOLD = 48;
 const WHEEL_SCROLL_INTERVAL_MS = 36;
@@ -121,6 +133,16 @@ const SELECT_SCROLL_DRAG_THRESHOLD_PX = 4;
 interface CameraSnapshot {
   focalPoint: number[];
   position: number[];
+}
+
+interface ViewPresentationSnapshot {
+  zoom: number | null;
+  pan: [number, number] | null;
+}
+
+interface VoiRangeSnapshot {
+  lower: number;
+  upper: number;
 }
 
 type ViewportAnnotationCounts = Record<ViewportTool, number>;
@@ -231,6 +253,41 @@ function getViewportViewSnapshot(
   };
 }
 
+function getViewportPresentationSnapshot(
+  viewport: import("@cornerstonejs/core").Types.IStackViewport,
+): ViewPresentationSnapshot | null {
+  const viewPresentation = viewport.getViewPresentation({
+    rotation: false,
+    displayArea: false,
+    zoom: true,
+    pan: true,
+    flipHorizontal: false,
+    flipVertical: false,
+  });
+  const zoom =
+    typeof viewPresentation.zoom === "number" &&
+    Number.isFinite(viewPresentation.zoom)
+      ? viewPresentation.zoom
+      : null;
+  const pan = Array.isArray(viewPresentation.pan)
+    ? viewPresentation.pan
+    : null;
+
+  if (
+    zoom == null ||
+    !pan ||
+    pan.length !== 2 ||
+    !pan.every((value) => typeof value === "number" && Number.isFinite(value))
+  ) {
+    return null;
+  }
+
+  return {
+    zoom,
+    pan: [pan[0], pan[1]],
+  };
+}
+
 function getTotalViewportAnnotationCount(
   annotationCounts: ViewportAnnotationCounts,
 ) {
@@ -267,6 +324,58 @@ function getViewportVoiSnapshot(
     windowWidth: windowWidth.toFixed(2),
     windowCenter: windowCenter.toFixed(2),
   };
+}
+
+function getViewportVoiRangeSnapshot(
+  viewport: import("@cornerstonejs/core").Types.IStackViewport,
+): VoiRangeSnapshot | null {
+  const voiRange = viewport.getProperties().voiRange;
+
+  if (
+    !voiRange ||
+    !Number.isFinite(voiRange.lower) ||
+    !Number.isFinite(voiRange.upper)
+  ) {
+    return null;
+  }
+
+  return {
+    lower: voiRange.lower,
+    upper: voiRange.upper,
+  };
+}
+
+function areViewPresentationSnapshotsEqual(
+  left: ViewPresentationSnapshot | null,
+  right: ViewPresentationSnapshot | null,
+) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  const leftPan = left.pan;
+  const rightPan = right.pan;
+
+  if (!leftPan || !rightPan) {
+    return leftPan === rightPan && left.zoom === right.zoom;
+  }
+
+  return (
+    left.zoom === right.zoom &&
+    leftPan[0] === rightPan[0] &&
+    leftPan[1] === rightPan[1]
+  );
+}
+
+function areVoiRangeSnapshotsEqual(
+  left: VoiRangeSnapshot | null,
+  right: VoiRangeSnapshot | null,
+) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return left.lower === right.lower && left.upper === right.upper;
 }
 
 function syncViewportViewState(
@@ -879,8 +988,11 @@ export function StackViewport({
   overlaySettings,
   annotationCommand = null,
   viewCommand = null,
+  cineState,
+  navigationCommand = null,
   sequenceSyncState,
   sequenceSyncCommand = null,
+  presentationSyncCommand = null,
   crossStudyCalibrationCount = 0,
   dicomTagDialogOpen = false,
   isSelected,
@@ -889,8 +1001,10 @@ export function StackViewport({
   onSelect,
   onCellSelect,
   onToggleMaximize,
+  onCinePlaybackStop,
   onAnnotationsChange,
   onRuntimeStateChange,
+  onPresentationStateChange,
 }: StackViewportProps) {
   const imageLayoutGridRef = useRef<HTMLDivElement | null>(null);
   const elementRef = useRef<HTMLDivElement | null>(null);
@@ -899,10 +1013,13 @@ export function StackViewport({
   const seriesRef = useRef(series);
   const onAnnotationsChangeRef = useRef(onAnnotationsChange);
   const onRuntimeStateChangeRef = useRef(onRuntimeStateChange);
+  const onPresentationStateChangeRef = useRef(onPresentationStateChange);
   const lastReportedParentAnnotationStateRef =
     useRef<ViewportAnnotationsState | null>(
       createEmptyViewportAnnotationsState(),
     );
+  const lastReportedPresentationStateRef =
+    useRef<StackViewportPresentationState | null>(null);
   const coreRef = useRef<typeof import("@cornerstonejs/core") | null>(null);
   const viewportRef = useRef<
     import("@cornerstonejs/core").Types.IStackViewport | null
@@ -914,11 +1031,18 @@ export function StackViewport({
   const initialCameraRef = useRef<CameraSnapshot | null>(null);
   const lastHandledAnnotationCommandIdRef = useRef<number | null>(null);
   const lastHandledViewCommandIdRef = useRef<number | null>(null);
+  const lastHandledNavigationCommandIdRef = useRef<number | null>(null);
   const lastHandledSequenceSyncCommandIdRef = useRef<number | null>(null);
+  const lastHandledPresentationSyncCommandIdRef = useRef<number | null>(null);
   const pendingNavigationSourceRef =
     useRef<StackViewportNavigationSource | null>(null);
+  const pendingPresentationSourceRef =
+    useRef<StackViewportPresentationSource | null>(null);
   const runtimeChangeTokenRef = useRef(0);
+  const presentationChangeTokenRef = useRef(0);
   const transientRecoveryAttemptsRef = useRef(0);
+  const suppressPresentationDispatchRef = useRef(false);
+  const releasePresentationDispatchFrameRef = useRef<number | null>(null);
   const [status, setStatus] = useState<ViewportStatus>("idle");
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [scrollIndicatorFrameIndex, setScrollIndicatorFrameIndex] = useState(0);
@@ -972,6 +1096,10 @@ export function StackViewport({
   useEffect(() => {
     onRuntimeStateChangeRef.current = onRuntimeStateChange;
   }, [onRuntimeStateChange]);
+
+  useEffect(() => {
+    onPresentationStateChangeRef.current = onPresentationStateChange;
+  }, [onPresentationStateChange]);
 
   useEffect(() => {
     const handleWindowPointerEnd = () => {
@@ -1248,6 +1376,56 @@ export function StackViewport({
     [],
   );
 
+  const emitPresentationState = useCallback(
+    (changeSource: StackViewportPresentationSource) => {
+      if (!onPresentationStateChangeRef.current) {
+        return;
+      }
+
+      const viewport = viewportRef.current;
+      const currentSeries = seriesRef.current;
+
+      if (!viewport || !currentSeries) {
+        onPresentationStateChangeRef.current(null);
+        lastReportedPresentationStateRef.current = null;
+        return;
+      }
+
+      const nextStateBase = {
+        status: "ready" as const,
+        viewPresentation: getViewportPresentationSnapshot(viewport),
+        voiRange: getViewportVoiRangeSnapshot(viewport),
+      };
+      const previousState = lastReportedPresentationStateRef.current;
+
+      if (
+        previousState?.status === nextStateBase.status &&
+        previousState.lastChangeSource === changeSource &&
+        areViewPresentationSnapshotsEqual(
+          previousState.viewPresentation,
+          nextStateBase.viewPresentation,
+        ) &&
+        areVoiRangeSnapshotsEqual(
+          previousState.voiRange,
+          nextStateBase.voiRange,
+        )
+      ) {
+        return;
+      }
+
+      presentationChangeTokenRef.current += 1;
+      const nextState: StackViewportPresentationState = {
+        ...nextStateBase,
+        lastChangeSource: changeSource,
+        lastChangeToken: presentationChangeTokenRef.current,
+      };
+
+      lastReportedPresentationStateRef.current = nextState;
+      onPresentationStateChangeRef.current(nextState);
+    },
+    [],
+  );
+
   useEffect(() => {
     const element = elementRef.current;
 
@@ -1361,6 +1539,15 @@ export function StackViewport({
         setViewFlipHorizontal,
         setViewFlipVertical,
       );
+
+      if (suppressPresentationDispatchRef.current) {
+        return;
+      }
+
+      const changeSource = pendingPresentationSourceRef.current ?? "user";
+
+      emitPresentationState(changeSource);
+      pendingPresentationSourceRef.current = null;
     };
     const handleVoiModified = () => {
       const core = coreRef.current;
@@ -1373,6 +1560,15 @@ export function StackViewport({
       const nextVoi = getViewportVoiSnapshot(core, viewport);
       setVoiWindowWidth(nextVoi.windowWidth);
       setVoiWindowCenter(nextVoi.windowCenter);
+
+      if (suppressPresentationDispatchRef.current) {
+        return;
+      }
+
+      const changeSource = pendingPresentationSourceRef.current ?? "user";
+
+      emitPresentationState(changeSource);
+      pendingPresentationSourceRef.current = null;
     };
     const handleWheel = (event: WheelEvent) => {
       const core = coreRef.current;
@@ -1557,6 +1753,8 @@ export function StackViewport({
       initialCameraRef.current = null;
       lastHandledAnnotationCommandIdRef.current = null;
       lastHandledViewCommandIdRef.current = null;
+      lastHandledNavigationCommandIdRef.current = null;
+      lastHandledPresentationSyncCommandIdRef.current = null;
       setPanOffset(DEFAULT_PAN_OFFSET);
       setAnnotationCounts(EMPTY_ANNOTATION_COUNTS);
       setSelectedAnnotationCount(0);
@@ -1573,10 +1771,20 @@ export function StackViewport({
       });
       lastReportedParentAnnotationStateRef.current =
         createEmptyViewportAnnotationsState();
+      lastReportedPresentationStateRef.current = null;
+      presentationChangeTokenRef.current = 0;
+      pendingPresentationSourceRef.current = null;
+      suppressPresentationDispatchRef.current = false;
+      if (releasePresentationDispatchFrameRef.current != null) {
+        window.cancelAnimationFrame(releasePresentationDispatchFrameRef.current);
+        releasePresentationDispatchFrameRef.current = null;
+      }
+      onPresentationStateChangeRef.current?.(null);
       setViewportRuntimeReady(false);
     };
   }, [
     containerReady,
+    emitPresentationState,
     emitRuntimeState,
     renderingEngineId,
     toolGroupId,
@@ -1857,8 +2065,12 @@ export function StackViewport({
           createEmptyViewportAnnotationsState();
         initialCameraRef.current = null;
         pendingNavigationSourceRef.current = null;
+        pendingPresentationSourceRef.current = null;
         transientRecoveryAttemptsRef.current = 0;
         onRuntimeStateChangeRef.current?.(null);
+        onPresentationStateChangeRef.current?.(null);
+        lastReportedPresentationStateRef.current = null;
+        presentationChangeTokenRef.current = 0;
         return;
       }
 
@@ -1875,6 +2087,10 @@ export function StackViewport({
       lastWheelAtRef.current = 0;
       lastScrollAtRef.current = 0;
       onRuntimeStateChangeRef.current?.(null);
+      onPresentationStateChangeRef.current?.(null);
+      lastReportedPresentationStateRef.current = null;
+      presentationChangeTokenRef.current = 0;
+      pendingPresentationSourceRef.current = "load";
 
       try {
         const imageIds = series.images.map((image) =>
@@ -1921,6 +2137,7 @@ export function StackViewport({
           setViewFlipVertical,
         );
         transientRecoveryAttemptsRef.current = 0;
+        emitPresentationState("load");
 
         if (!cancelled) {
           const nextFrameIndex = currentViewport.getCurrentImageIdIndex() + 1;
@@ -1954,6 +2171,8 @@ export function StackViewport({
 
         setStatus("error");
         onRuntimeStateChangeRef.current?.(null);
+        onPresentationStateChangeRef.current?.(null);
+        lastReportedPresentationStateRef.current = null;
       }
     }
 
@@ -1965,11 +2184,65 @@ export function StackViewport({
     };
   }, [
     containerReady,
+    emitPresentationState,
     emitRuntimeState,
     series,
     viewportKey,
     viewportRuntimeReady,
     viewportRuntimeSeed,
+  ]);
+
+  useEffect(() => {
+    if (!series || !series.images.length) {
+      onRuntimeStateChangeRef.current?.(null);
+      return;
+    }
+
+    if (!navigationCommand) {
+      return;
+    }
+
+    if (navigationCommand.targetViewportKey !== viewportKey) {
+      return;
+    }
+
+    if (
+      lastHandledNavigationCommandIdRef.current === navigationCommand.id
+    ) {
+      return;
+    }
+
+    const viewport = viewportRef.current;
+
+    if (!viewportRuntimeReady || !viewport) {
+      return;
+    }
+
+    const nextFrameIndex = clampNumber(
+      navigationCommand.frameIndex,
+      1,
+      series.images.length,
+    );
+
+    lastHandledNavigationCommandIdRef.current = navigationCommand.id;
+
+    if (nextFrameIndex === currentImageIndex) {
+      return;
+    }
+
+    pendingNavigationSourceRef.current = "user";
+    setScrollIndicatorFrameIndex(nextFrameIndex);
+    void viewport.setImageIdIndex(nextFrameIndex - 1).catch((error) => {
+      pendingNavigationSourceRef.current = null;
+      setScrollIndicatorFrameIndex(currentImageIndex);
+      console.error("Failed to apply stack navigation command", error);
+    });
+  }, [
+    currentImageIndex,
+    navigationCommand,
+    series,
+    viewportKey,
+    viewportRuntimeReady,
   ]);
 
   useEffect(() => {
@@ -2026,8 +2299,172 @@ export function StackViewport({
   ]);
 
   useEffect(() => {
+    if (!series || !series.images.length) {
+      onPresentationStateChangeRef.current?.(null);
+      lastReportedPresentationStateRef.current = null;
+      return;
+    }
+
+    if (!presentationSyncCommand) {
+      return;
+    }
+
+    if (presentationSyncCommand.targetViewportKey !== viewportKey) {
+      return;
+    }
+
+    if (
+      lastHandledPresentationSyncCommandIdRef.current ===
+      presentationSyncCommand.id
+    ) {
+      return;
+    }
+
+    const core = coreRef.current;
+    const viewport = viewportRef.current;
+
+    if (!viewportRuntimeReady || !core || !viewport) {
+      return;
+    }
+
+    lastHandledPresentationSyncCommandIdRef.current = presentationSyncCommand.id;
+    suppressPresentationDispatchRef.current = true;
+    pendingPresentationSourceRef.current = "sync";
+    if (releasePresentationDispatchFrameRef.current != null) {
+      window.cancelAnimationFrame(releasePresentationDispatchFrameRef.current);
+    }
+
+    try {
+      if (presentationSyncCommand.viewPresentation) {
+        viewport.setViewPresentation({
+          zoom:
+            presentationSyncCommand.viewPresentation.zoom ??
+            viewport.getViewPresentation({
+              rotation: false,
+              displayArea: false,
+              zoom: true,
+              pan: false,
+              flipHorizontal: false,
+              flipVertical: false,
+            }).zoom,
+          pan:
+            presentationSyncCommand.viewPresentation.pan ??
+            viewport.getViewPresentation({
+              rotation: false,
+              displayArea: false,
+              zoom: false,
+              pan: true,
+              flipHorizontal: false,
+              flipVertical: false,
+            }).pan,
+        });
+      }
+
+      if (presentationSyncCommand.voiRange) {
+        viewport.setProperties({
+          voiRange: presentationSyncCommand.voiRange,
+        });
+      }
+
+      viewport.render();
+      syncViewportViewState(
+        viewport,
+        initialCameraRef.current,
+        setPanOffset,
+        setViewZoom,
+        setViewRotation,
+        setViewFlipHorizontal,
+        setViewFlipVertical,
+      );
+
+      const nextVoi = getViewportVoiSnapshot(core, viewport);
+
+      setVoiWindowWidth(nextVoi.windowWidth);
+      setVoiWindowCenter(nextVoi.windowCenter);
+      emitPresentationState("sync");
+    } catch (error) {
+      console.error("Failed to apply presentation sync command", error);
+      suppressPresentationDispatchRef.current = false;
+      pendingPresentationSourceRef.current = null;
+      return;
+    }
+
+    releasePresentationDispatchFrameRef.current = window.requestAnimationFrame(
+      () => {
+        suppressPresentationDispatchRef.current = false;
+        pendingPresentationSourceRef.current = null;
+        releasePresentationDispatchFrameRef.current = null;
+      },
+    );
+  }, [
+    emitPresentationState,
+    presentationSyncCommand,
+    series,
+    viewportKey,
+    viewportRuntimeReady,
+  ]);
+
+  useEffect(() => {
+    if (
+      !cineState.isPlaying ||
+      !viewportRuntimeReady ||
+      status !== "ready" ||
+      !series ||
+      series.images.length <= 1 ||
+      hasMontageImageLayout ||
+      currentImageIndex < 1
+    ) {
+      return;
+    }
+
+    const viewport = viewportRef.current;
+
+    if (!viewport) {
+      return;
+    }
+
+    const intervalMs = Math.max(40, Math.round(1000 / cineState.fps));
+    const timeoutId = window.setTimeout(() => {
+      const lastFrameIndex = series.images.length;
+
+      if (currentImageIndex >= lastFrameIndex && !cineState.loop) {
+        onCinePlaybackStop?.(viewportKey);
+        return;
+      }
+
+      const nextFrameIndex =
+        currentImageIndex >= lastFrameIndex ? 1 : currentImageIndex + 1;
+
+      pendingNavigationSourceRef.current = "cine";
+      setScrollIndicatorFrameIndex(nextFrameIndex);
+      void viewport.setImageIdIndex(nextFrameIndex - 1).catch((error) => {
+        pendingNavigationSourceRef.current = null;
+        setScrollIndicatorFrameIndex(currentImageIndex);
+        onCinePlaybackStop?.(viewportKey);
+        console.error("Failed to advance cine playback", error);
+      });
+    }, intervalMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    cineState.fps,
+    cineState.isPlaying,
+    cineState.loop,
+    currentImageIndex,
+    hasMontageImageLayout,
+    onCinePlaybackStop,
+    series,
+    status,
+    viewportKey,
+    viewportRuntimeReady,
+  ]);
+
+  useEffect(() => {
     return () => {
       onRuntimeStateChangeRef.current?.(null);
+      onPresentationStateChangeRef.current?.(null);
     };
   }, []);
 
@@ -2037,6 +2474,9 @@ export function StackViewport({
       data-testid="viewport-stage"
       data-active-tool={activeTool}
       data-invert-enabled={String(invertEnabled)}
+      data-cine-playing={String(cineState.isPlaying)}
+      data-cine-fps={cineState.fps}
+      data-cine-loop={String(cineState.loop)}
       data-pan-offset={panOffset}
       data-view-zoom={viewZoom}
       data-view-rotation={viewRotation}

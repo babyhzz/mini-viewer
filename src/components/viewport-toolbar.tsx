@@ -9,6 +9,11 @@ import {
   type ViewportToolbarIconName,
 } from "@/components/viewport-toolbar-icons";
 import {
+  VIEWPORT_CINE_FPS_PRESETS,
+  type ViewportCineFpsPreset,
+  type ViewportCineState,
+} from "@/lib/viewports/cine";
+import {
   getEnabledViewportSequenceSyncTypes,
   getViewportSequenceSyncStateLabel,
   hasEnabledViewportSequenceSync,
@@ -55,6 +60,12 @@ interface ViewportToolbarProps {
   layoutId: ViewportLayoutId;
   imageLayoutId: ViewportImageLayoutId;
   mprLayoutId: ViewportMprLayoutId;
+  cineState: ViewportCineState;
+  cineEnabled: boolean;
+  keyImageEnabled: boolean;
+  keyImageActive: boolean;
+  keyImageCount: number;
+  keyImageListEnabled: boolean;
   sequenceSyncState: ViewportSequenceSyncState;
   crossStudyCalibrationCount: number;
   invertEnabled: boolean;
@@ -65,6 +76,9 @@ interface ViewportToolbarProps {
   onLayoutChange: (layoutId: ViewportLayoutId) => void;
   onImageLayoutChange: (layoutId: ViewportImageLayoutId) => void;
   onMprLayoutChange: (layoutId: ViewportMprLayoutId | "off") => void;
+  onCineTogglePlay: () => void;
+  onCineSetFps: (fps: ViewportCineFpsPreset) => void;
+  onCineToggleLoop: () => void;
   onSequenceSyncToggle: (syncType: ViewportSequenceSyncType) => void;
   onSequenceSyncClear: () => void;
   onWindowPresetSelect: (presetId: ViewportWindowPresetId) => void;
@@ -73,6 +87,7 @@ interface ViewportToolbarProps {
   ) => void;
   onAction: (action: ViewportAction) => void;
   onAnnotationManageAction: (action: "deleteSelected" | "clearAll") => void;
+  onOpenKeyImageList: () => void;
   onOpenSettings: () => void;
   disabled?: boolean;
 }
@@ -201,7 +216,17 @@ function isToolbarItemModeDisabled(
   item: ViewportToolbarItemDefinition,
   viewportMode: ViewportMode,
   viewCommandsEnabled: boolean,
+  cineEnabled: boolean,
+  keyImageEnabled: boolean,
 ) {
+  if (item.kind === "menu" && item.id === "cine" && !cineEnabled) {
+    return true;
+  }
+
+  if (item.kind === "action" && item.id === "keyImage" && !keyImageEnabled) {
+    return true;
+  }
+
   if (viewportMode !== "mpr") {
     if (
       !viewCommandsEnabled &&
@@ -233,6 +258,7 @@ function isToolbarItemModeDisabled(
   if (item.kind === "menu") {
     return (
       item.id === "windowPreset" ||
+      item.id === "cine" ||
       item.id === "imageLayout" ||
       item.id === "sequenceSync" ||
       item.id === "annotationManage"
@@ -249,6 +275,12 @@ export function ViewportToolbar({
   layoutId,
   imageLayoutId,
   mprLayoutId,
+  cineState,
+  cineEnabled,
+  keyImageEnabled,
+  keyImageActive,
+  keyImageCount,
+  keyImageListEnabled,
   sequenceSyncState,
   crossStudyCalibrationCount,
   invertEnabled,
@@ -259,12 +291,16 @@ export function ViewportToolbar({
   onLayoutChange,
   onImageLayoutChange,
   onMprLayoutChange,
+  onCineTogglePlay,
+  onCineSetFps,
+  onCineToggleLoop,
   onSequenceSyncToggle,
   onSequenceSyncClear,
   onWindowPresetSelect,
   onViewAction,
   onAction,
   onAnnotationManageAction,
+  onOpenKeyImageList,
   onOpenSettings,
   disabled = false,
 }: ViewportToolbarProps) {
@@ -379,6 +415,54 @@ export function ViewportToolbar({
       onMprLayoutChange(key as ViewportMprLayoutId | "off");
     },
   };
+  const cineMenu: MenuProps = {
+    selectable: true,
+    selectedKeys: [`fps:${cineState.fps}`],
+    items: [
+      {
+        key: "toggle",
+        label: renderToolMenuOption({
+          label: cineState.isPlaying ? "暂停播放" : "开始播放",
+          iconName: "cine",
+          testId: "viewport-cine-option-toggle",
+        }),
+      },
+      {
+        key: "loop",
+        label: renderToolMenuOption({
+          label: cineState.loop ? "循环播放 · 开" : "循环播放 · 关",
+          iconName: "cine",
+          testId: "viewport-cine-option-loop",
+        }),
+      },
+      {
+        type: "divider",
+      },
+      ...VIEWPORT_CINE_FPS_PRESETS.map((fps) => ({
+        key: `fps:${fps}`,
+        label: renderToolMenuOption({
+          label: `${fps} FPS`,
+          iconName: "cine",
+          testId: `viewport-cine-option-fps-${fps}`,
+        }),
+      })),
+    ],
+    onClick: ({ key }) => {
+      if (key === "toggle") {
+        onCineTogglePlay();
+        return;
+      }
+
+      if (key === "loop") {
+        onCineToggleLoop();
+        return;
+      }
+
+      if (String(key).startsWith("fps:")) {
+        onCineSetFps(Number(String(key).slice(4)) as ViewportCineFpsPreset);
+      }
+    },
+  };
   const sequenceSyncMenu: MenuProps = {
     selectable: true,
     multiple: true,
@@ -398,6 +482,14 @@ export function ViewportToolbar({
           label: "跨检查同步",
           iconName: "sequenceSync",
           testId: "viewport-sequence-sync-option-crossStudy",
+        }),
+      },
+      {
+        key: "display",
+        label: renderToolMenuOption({
+          label: "显示同步",
+          iconName: "sequenceSync",
+          testId: "viewport-sequence-sync-option-display",
         }),
       },
       {
@@ -472,6 +564,8 @@ export function ViewportToolbar({
                 item,
                 viewportMode,
                 viewCommandsEnabled,
+                cineEnabled,
+                keyImageEnabled,
               );
 
             if (item.kind === "group") {
@@ -548,6 +642,8 @@ export function ViewportToolbar({
               const menu =
                 item.id === "windowPreset"
                   ? windowPresetMenu
+                  : item.id === "cine"
+                    ? cineMenu
                   : item.id === "imageLayout"
                       ? imageLayoutMenu
                       : item.id === "mprLayout"
@@ -560,6 +656,8 @@ export function ViewportToolbar({
               const dataTestId =
                 item.id === "windowPreset"
                   ? "viewport-window-preset-button"
+                  : item.id === "cine"
+                    ? "viewport-cine-button"
                   : item.id === "imageLayout"
                       ? "viewport-image-layout-button"
                       : item.id === "mprLayout"
@@ -580,6 +678,12 @@ export function ViewportToolbar({
               const title =
                 item.id === "windowPreset"
                   ? "窗宽预设"
+                  : item.id === "cine"
+                    ? `${
+                        cineState.isPlaying ? "Cine 播放中" : "Cine 已暂停"
+                      } · ${cineState.fps} FPS · ${
+                        cineState.loop ? "循环" : "单次"
+                      }`
                   : item.id === "imageLayout"
                       ? `图像布局 ${currentImageLayout.label} · ${currentImageLayout.description}`
                       : item.id === "mprLayout"
@@ -597,8 +701,9 @@ export function ViewportToolbar({
                             ? `布局 ${currentLayout.label} · ${currentLayout.description}`
                             : "删除图元";
               const isToggled =
-                item.id === "sequenceSync" &&
-                hasEnabledViewportSequenceSync(sequenceSyncState);
+                (item.id === "cine" && cineState.isPlaying) ||
+                (item.id === "sequenceSync" &&
+                  hasEnabledViewportSequenceSync(sequenceSyncState));
 
               return (
                 <Dropdown
@@ -618,6 +723,8 @@ export function ViewportToolbar({
                   overlayClassName={
                     item.id === "windowPreset"
                       ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
+                      : item.id === "cine"
+                        ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
                       : item.id === "imageLayout"
                           ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-image-layout"
                           : item.id === "mprLayout"
@@ -686,7 +793,9 @@ export function ViewportToolbar({
             const isCurrentTool =
               item.kind === "tool" && activeTool === item.id;
             const isToggledAction =
-              item.kind === "action" && item.id === "invert" && invertEnabled;
+              item.kind === "action" &&
+              ((item.id === "invert" && invertEnabled) ||
+                (item.id === "keyImage" && keyImageActive));
             const dataTestId = `viewport-tool-${item.id}`;
 
             return (
@@ -721,6 +830,23 @@ export function ViewportToolbar({
           })}
         </div>
         <div className="viewport-toolbar-utilities">
+          <button
+            type="button"
+            className="viewport-settings-button"
+            data-testid="viewport-key-image-list-button"
+            aria-label="关键图像列表"
+            title="关键图像列表"
+            disabled={disabled || !keyImageListEnabled}
+            onClick={onOpenKeyImageList}
+          >
+            <ViewportToolbarIcon
+              className="viewport-toolbar-icon"
+              name="keyImageList"
+            />
+            {keyImageCount > 0 ? (
+              <span className="viewport-utility-count">{keyImageCount}</span>
+            ) : null}
+          </button>
           <button
             type="button"
             className="viewport-settings-button"
