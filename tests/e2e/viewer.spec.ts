@@ -1200,9 +1200,11 @@ test.describe("DICOM viewer smoke coverage", () => {
 
     const firstViewportSlot = page.getByTestId("viewport-slot-viewport-1");
     const firstViewportStage = firstViewportSlot.getByTestId("viewport-stage");
+    const firstViewportSlabHud = firstViewportSlot.getByTestId("mpr-slab-hud");
     const secondViewportSlot = page.getByTestId("viewport-slot-viewport-2");
     const secondViewportStage =
       secondViewportSlot.getByTestId("viewport-stage");
+    const secondViewportSlabHud = secondViewportSlot.getByTestId("mpr-slab-hud");
 
     await page.getByTestId("viewport-mpr-layout-button").click();
     await page.getByTestId("viewport-mpr-layout-option-left1Right2").click();
@@ -1211,6 +1213,25 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(firstViewportStage).toHaveAttribute("data-status", "ready", {
       timeout: 60_000,
     });
+    await expect(firstViewportSlabHud).toHaveAttribute("data-slab-mode", "none");
+    await expect(firstViewportSlabHud).toHaveAttribute("data-pane-id", "axial");
+    await expect(firstViewportSlabHud).toContainText("AX");
+    await expect(firstViewportSlabHud).toContainText("普通");
+    await expect(firstViewportSlabHud).toContainText("单层");
+
+    await firstViewportSlot
+      .locator('[data-testid="mpr-pane"][data-pane-id="sagittal"]')
+      .click({
+        position: {
+          x: 24,
+          y: 24,
+        },
+      });
+    await expect(firstViewportSlabHud).toHaveAttribute(
+      "data-pane-id",
+      "sagittal",
+    );
+    await expect(firstViewportSlabHud).toContainText("SA");
 
     await page.getByTestId("viewport-mpr-slab-button").click();
     await page.getByTestId("viewport-mpr-slab-mode-option-mip").click();
@@ -1222,6 +1243,13 @@ test.describe("DICOM viewer smoke coverage", () => {
       "data-mpr-slab-thickness",
       "20",
     );
+    await expect(firstViewportSlabHud).toHaveAttribute("data-slab-mode", "mip");
+    await expect(firstViewportSlabHud).toHaveAttribute(
+      "data-slab-value",
+      "20 mm",
+    );
+    await expect(firstViewportSlabHud).toContainText("MIP");
+    await expect(firstViewportSlabHud).toContainText("20 mm");
 
     await secondViewportStage.click({
       position: {
@@ -1244,6 +1272,10 @@ test.describe("DICOM viewer smoke coverage", () => {
       "data-mpr-slab-thickness",
       "10",
     );
+    await expect(secondViewportSlabHud).toHaveAttribute("data-slab-mode", "none");
+    await expect(secondViewportSlabHud).toHaveAttribute("data-pane-id", "axial");
+    await expect(secondViewportSlabHud).toContainText("AX");
+    await expect(secondViewportSlabHud).toContainText("单层");
 
     await page.getByTestId("viewport-mpr-slab-button").click();
     await page.getByTestId("viewport-mpr-slab-mode-option-average").click();
@@ -1258,6 +1290,16 @@ test.describe("DICOM viewer smoke coverage", () => {
       "data-mpr-slab-thickness",
       "5",
     );
+    await expect(secondViewportSlabHud).toHaveAttribute(
+      "data-slab-mode",
+      "average",
+    );
+    await expect(secondViewportSlabHud).toHaveAttribute(
+      "data-slab-value",
+      "5 mm",
+    );
+    await expect(secondViewportSlabHud).toContainText("平均");
+    await expect(secondViewportSlabHud).toContainText("5 mm");
     await expect(firstViewportStage).toHaveAttribute("data-mpr-slab-mode", "mip");
     await expect(firstViewportStage).toHaveAttribute(
       "data-mpr-slab-thickness",

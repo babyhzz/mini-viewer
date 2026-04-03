@@ -1832,6 +1832,60 @@ select {
   pointer-events: none;
 }
 
+.mpr-stage-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid rgba(81, 103, 124, 0.56);
+  background: rgba(7, 11, 16, 0.78);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(8px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.viewport-stage.is-selected .mpr-stage-hud {
+  border-color: rgba(97, 190, 255, 0.48);
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(97, 190, 255, 0.08);
+}
+
+.mpr-stage-hud-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(84, 102, 122, 0.42);
+  background: rgba(17, 24, 33, 0.82);
+  color: #d9e7f6;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.mpr-stage-hud-chip.is-pane {
+  border-color: rgba(255, 196, 92, 0.42);
+  color: #ffd690;
+}
+
+.mpr-stage-hud-chip.is-mode {
+  border-color: rgba(109, 186, 235, 0.4);
+  color: #bfe6ff;
+}
+
+.mpr-stage-hud-chip.is-value {
+  color: #eef5fc;
+}
+
 .mpr-pane-scrollbar {
   top: clamp(24px, 18%, 40px);
   right: 4px;

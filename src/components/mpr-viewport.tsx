@@ -39,6 +39,7 @@ import {
 import {
   getEffectiveViewportMprSlabThickness,
   getViewportMprSlabBlendMode,
+  getViewportMprSlabModeDefinition,
   type ViewportMprSlabState,
 } from "@/lib/viewports/mpr-slab";
 import type { ViewportMprCrosshairSyncCommand } from "@/lib/viewports/mpr-crosshairs";
@@ -182,6 +183,10 @@ function createWheelScrollState(): WheelScrollState {
     lastWheelAt: 0,
     lastScrollAt: 0,
   };
+}
+
+function formatMprSlabThickness(thickness: number) {
+  return Number.isInteger(thickness) ? String(thickness) : thickness.toFixed(1);
 }
 
 function createEmptyMprPaneSnapshots() {
@@ -436,6 +441,14 @@ export function MprViewport({
     : "select";
   const mprSlabMode = mprSlabState.mode;
   const mprSlabThickness = mprSlabState.thickness;
+  const currentSlabMode = getViewportMprSlabModeDefinition(mprSlabMode);
+  const activePaneDefinition =
+    mprLayoutDefinition.panes.find((pane) => pane.id === activePaneId) ??
+    mprLayoutDefinition.panes[0];
+  const slabValueLabel =
+    mprSlabMode === "none"
+      ? "单层"
+      : `${formatMprSlabThickness(mprSlabThickness)} mm`;
   const primaryPaneSnapshot = paneSnapshots[mprLayoutDefinition.panes[0].id];
   const paneElementsReady = mprLayoutDefinition.panes.every(
     (pane) => paneElementRefs.current[pane.id],
@@ -1589,6 +1602,24 @@ export function MprViewport({
           );
         })}
       </div>
+      {status === "ready" ? (
+        <div
+          className="mpr-stage-hud"
+          data-testid="mpr-slab-hud"
+          data-slab-mode={mprSlabMode}
+          data-pane-id={activePaneDefinition.id}
+          data-pane-label={activePaneDefinition.shortLabel}
+          data-slab-value={slabValueLabel}
+        >
+          <span className="mpr-stage-hud-chip is-pane">
+            {activePaneDefinition.shortLabel}
+          </span>
+          <span className="mpr-stage-hud-chip is-mode">
+            {currentSlabMode.label}
+          </span>
+          <span className="mpr-stage-hud-chip is-value">{slabValueLabel}</span>
+        </div>
+      ) : null}
       {status === "loading" ? (
         <div className="status-layer">
           <Spin
