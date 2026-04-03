@@ -35,6 +35,7 @@ import {
   getSharedCornerstoneRenderingEngineId,
   scheduleSharedCornerstoneRenderingEngineDestroy,
 } from "@/lib/cornerstone/rendering-engine";
+import { useViewportContainerSize } from "@/lib/cornerstone/viewport-runtime/use-viewport-container-size";
 import {
   applyActiveViewportTool,
   configureViewportToolGroup,
@@ -1087,7 +1088,6 @@ export function StackViewport({
   const [voiWindowCenter, setVoiWindowCenter] = useState(
     DEFAULT_VOI_WINDOW_CENTER,
   );
-  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [viewportRuntimeReady, setViewportRuntimeReady] = useState(false);
   const [viewportRuntimeSeed, setViewportRuntimeSeed] = useState(0);
   const [referenceLineSegment, setReferenceLineSegment] =
@@ -1101,6 +1101,7 @@ export function StackViewport({
     originY: 0,
     isPointerDown: false,
   });
+  const viewportSize = useViewportContainerSize(elementRef, viewportKey);
   const containerReady = viewportSize.width > 0 && viewportSize.height > 0;
   const [isSelectScrollActive, setIsSelectScrollActive] = useState(false);
   const resetSelectScrollGesture = useCallback(() => {
@@ -1558,39 +1559,6 @@ export function StackViewport({
   useEffect(() => {
     syncReferenceLineOverlayRef.current = syncReferenceLineOverlay;
   }, [syncReferenceLineOverlay]);
-
-  useEffect(() => {
-    const element = elementRef.current;
-
-    if (!element) {
-      return;
-    }
-
-    const updateViewportSize = () => {
-      const nextWidth = Math.round(element.clientWidth);
-      const nextHeight = Math.round(element.clientHeight);
-
-      setViewportSize((previous) =>
-        previous.width === nextWidth && previous.height === nextHeight
-          ? previous
-          : { width: nextWidth, height: nextHeight },
-      );
-    };
-
-    updateViewportSize();
-
-    const observer = new ResizeObserver(() => {
-      updateViewportSize();
-    });
-
-    observer.observe(element);
-    window.addEventListener("resize", updateViewportSize);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updateViewportSize);
-    };
-  }, [viewportKey]);
 
   useEffect(() => {
     activeToolRef.current = activeTool;

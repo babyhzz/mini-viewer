@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { normalizeViewerSettings } from "@/lib/settings/overlay";
-import { readViewerSettings, writeViewerSettings } from "@/lib/settings/store";
+import {
+  readViewerSettings,
+  writeViewerSettings,
+} from "@/lib/settings/viewer-settings-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

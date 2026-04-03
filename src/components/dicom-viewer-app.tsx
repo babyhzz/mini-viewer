@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { App, InputNumber, Spin } from "antd";
 import { useShallow } from "zustand/react/shallow";
 
@@ -8,9 +8,12 @@ import { AnnotationListDrawer } from "@/components/annotation-list-drawer";
 import { AppIcon } from "@/components/app-icon";
 import { KeyImageDrawer } from "@/components/key-image-drawer";
 import { MprViewport } from "@/components/mpr-viewport";
+import { useSelectedViewportContext } from "@/hooks/use-selected-viewport-context";
+import { useViewerBootstrap } from "@/hooks/use-viewer-bootstrap";
+import { useViewerKeyboardShortcuts } from "@/hooks/use-viewer-keyboard-shortcuts";
+import { useViewportLayoutSession } from "@/hooks/use-viewport-layout-session";
 import {
   createEmptyViewportAnnotationsState,
-  type ViewportAnnotationsState,
 } from "@/types/viewport-annotations";
 import { StackViewport } from "@/components/stack-viewport";
 import { ThumbnailCanvas } from "@/components/thumbnail-canvas";
@@ -18,15 +21,9 @@ import { ViewerSettingsDrawer } from "@/components/viewer-settings-drawer";
 import { ViewportToolbar } from "@/components/viewport-toolbar";
 import { initializeCornerstone } from "@/lib/cornerstone/init";
 import {
-  createDefaultViewerSettings,
   getViewerSettingsDefaultMprSlabState,
   normalizeViewerSettings,
 } from "@/lib/settings/overlay";
-import {
-  findToolbarShortcutCommandId,
-  getToolbarShortcutBindingFromKeyboardEvent,
-  isToolbarShortcutToolCommand,
-} from "@/lib/settings/shortcuts";
 import type { ViewportAnnotationCommand } from "@/lib/tools/cornerstone-tool-adapter";
 import {
   getViewportToolGroupId,
@@ -37,7 +34,6 @@ import {
 import {
   DEFAULT_VIEWPORT_MODE,
   DEFAULT_VIEWPORT_MPR_LAYOUT_ID,
-  type ViewportMode,
   type ViewportMprLayoutId,
 } from "@/lib/viewports/mpr-layouts";
 import {
@@ -52,11 +48,9 @@ import {
 } from "@/lib/viewports/layouts";
 import {
   DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID,
-  getViewportImageLayoutDefinition,
   type ViewportImageLayoutId,
 } from "@/lib/viewports/image-layouts";
 import {
-  createDefaultViewportCineState,
   isViewportCineCompatible,
   normalizeViewportCineState,
   type ViewportCineFpsPreset,
@@ -93,7 +87,6 @@ import {
   type CrossStudyCalibration,
   type ViewportSliceSyncType,
   type ViewportSequenceSyncCommand,
-  type ViewportSequenceSyncState,
   type ViewportSequenceSyncType,
 } from "@/lib/viewports/sequence-sync";
 import type {
@@ -101,22 +94,11 @@ import type {
   ViewportWindowPresetId,
 } from "@/lib/viewports/view-commands";
 import type {
-  DicomHierarchyResponse,
   DicomSeriesNode,
-  DicomStudyNode,
 } from "@/types/dicom";
 import type { ViewerSettings } from "@/types/settings";
 import { viewerSessionSelectors } from "@/stores/viewer-session/selectors";
-import {
-  useViewerSessionStore,
-  type ViewportCellSelection,
-} from "@/stores/viewer-session-store";
-
-interface SelectedSeries {
-  key: string;
-  study: DicomStudyNode;
-  series: DicomSeriesNode;
-}
+import { useViewerSessionStore } from "@/stores/viewer-session-store";
 
 type ViewportAnnotationCommandInput =
   | {
@@ -133,161 +115,6 @@ type ViewportAnnotationCommandInput =
 
 function buildSeriesKey(studyId: string, seriesId: string) {
   return `${studyId}::${seriesId}`;
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (target.isContentEditable) {
-    return true;
-  }
-
-  return Boolean(
-    target.closest("input, textarea, select, [contenteditable='true']"),
-  );
-}
-
-function getOrderedSeriesEntries(
-  hierarchy: DicomHierarchyResponse | null,
-): SelectedSeries[] {
-  if (!hierarchy) {
-    return [];
-  }
-
-  return hierarchy.studies.flatMap((study) =>
-    study.series.map((series) => ({
-      key: buildSeriesKey(study.studyId, series.seriesId),
-      study,
-      series,
-    })),
-  );
-}
-
-function alignViewportBooleanState(
-  viewportIds: string[],
-  previousState: Record<string, boolean>,
-  fallbackValue: boolean,
-) {
-  return viewportIds.reduce<Record<string, boolean>>(
-    (nextState, viewportId) => {
-      nextState[viewportId] = previousState[viewportId] ?? fallbackValue;
-      return nextState;
-    },
-    {},
-  );
-}
-
-function alignViewportAnnotationStateMap(
-  viewportIds: string[],
-  previousState: Record<string, ViewportAnnotationsState>,
-) {
-  return viewportIds.reduce<Record<string, ViewportAnnotationsState>>(
-    (nextState, viewportId) => {
-      nextState[viewportId] =
-        previousState[viewportId] ?? createEmptyViewportAnnotationsState();
-      return nextState;
-    },
-    {},
-  );
-}
-
-function alignViewportImageLayoutState(
-  viewportIds: string[],
-  previousState: Record<string, ViewportImageLayoutId>,
-) {
-  return viewportIds.reduce<Record<string, ViewportImageLayoutId>>(
-    (nextState, viewportId) => {
-      nextState[viewportId] =
-        previousState[viewportId] ?? DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID;
-      return nextState;
-    },
-    {},
-  );
-}
-
-function alignViewportModeState(
-  viewportIds: string[],
-  previousState: Record<string, ViewportMode>,
-) {
-  return viewportIds.reduce<Record<string, ViewportMode>>(
-    (nextState, viewportId) => {
-      nextState[viewportId] =
-        previousState[viewportId] ?? DEFAULT_VIEWPORT_MODE;
-      return nextState;
-    },
-    {},
-  );
-}
-
-function alignViewportMprLayoutState(
-  viewportIds: string[],
-  previousState: Record<string, ViewportMprLayoutId>,
-) {
-  return viewportIds.reduce<Record<string, ViewportMprLayoutId>>(
-    (nextState, viewportId) => {
-      nextState[viewportId] =
-        previousState[viewportId] ?? DEFAULT_VIEWPORT_MPR_LAYOUT_ID;
-      return nextState;
-    },
-    {},
-  );
-}
-
-function alignViewportCellSelectionState(
-  viewportIds: string[],
-  previousState: Record<string, ViewportCellSelection>,
-) {
-  return viewportIds.reduce<Record<string, ViewportCellSelection>>(
-    (nextState, viewportId) => {
-      nextState[viewportId] = previousState[viewportId] ?? "all";
-      return nextState;
-    },
-    {},
-  );
-}
-
-function alignViewportCineState(
-  viewportIds: string[],
-  previousState: Record<string, ViewportCineState>,
-) {
-  return viewportIds.reduce<Record<string, ViewportCineState>>(
-    (nextState, viewportId) => {
-      nextState[viewportId] = previousState[viewportId]
-        ? normalizeViewportCineState(previousState[viewportId])
-        : createDefaultViewportCineState();
-      return nextState;
-    },
-    {},
-  );
-}
-
-function alignViewportSequenceSyncState(
-  viewportIds: string[],
-  previousState: Record<string, ViewportSequenceSyncState>,
-) {
-  return viewportIds.reduce<Record<string, ViewportSequenceSyncState>>(
-    (nextState, viewportId) => {
-      nextState[viewportId] =
-        previousState[viewportId] ?? DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE;
-      return nextState;
-    },
-    {},
-  );
-}
-
-function alignViewportNullableStateMap<T>(
-  viewportIds: string[],
-  previousState: Record<string, T | null>,
-) {
-  return viewportIds.reduce<Record<string, T | null>>(
-    (nextState, viewportId) => {
-      nextState[viewportId] = previousState[viewportId] ?? null;
-      return nextState;
-    },
-    {},
-  );
 }
 
 function areViewportCineStatesEqual(
@@ -404,58 +231,6 @@ function findNearestFrameIndexForReferenceLinePlane(
   );
 }
 
-function buildViewportSeriesAssignments(
-  viewportIds: string[],
-  previousAssignments: Record<string, string | null>,
-  orderedSeriesKeys: string[],
-) {
-  const availableSeriesKeys = new Set(orderedSeriesKeys);
-  const nextAssignments = viewportIds.reduce<Record<string, string | null>>(
-    (assignments, viewportId) => {
-      const previousSeriesKey = previousAssignments[viewportId];
-
-      assignments[viewportId] =
-        previousSeriesKey && availableSeriesKeys.has(previousSeriesKey)
-          ? previousSeriesKey
-          : null;
-
-      return assignments;
-    },
-    {},
-  );
-
-  if (!orderedSeriesKeys.length) {
-    return nextAssignments;
-  }
-
-  const usedSeriesKeys = new Set(
-    Object.values(nextAssignments).filter((seriesKey): seriesKey is string =>
-      Boolean(seriesKey),
-    ),
-  );
-  const remainingSeriesKeys = orderedSeriesKeys.filter(
-    (seriesKey) => !usedSeriesKeys.has(seriesKey),
-  );
-  let recycleIndex = 0;
-
-  for (const viewportId of viewportIds) {
-    if (nextAssignments[viewportId]) {
-      continue;
-    }
-
-    if (remainingSeriesKeys.length) {
-      nextAssignments[viewportId] = remainingSeriesKeys.shift() ?? null;
-      continue;
-    }
-
-    nextAssignments[viewportId] =
-      orderedSeriesKeys[recycleIndex % orderedSeriesKeys.length] ?? null;
-    recycleIndex += 1;
-  }
-
-  return nextAssignments;
-}
-
 export function DicomViewerApp() {
   const { message, modal } = App.useApp();
   const annotationCommandIdRef = useRef(0);
@@ -478,11 +253,6 @@ export function DicomViewerApp() {
     Record<string, string>
   >({});
   const processedManualSequenceSyncRequestIdRef = useRef(0);
-  const [hierarchy, setHierarchy] = useState<DicomHierarchyResponse | null>(
-    null,
-  );
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const {
     viewerSettings,
     activeViewportTool,
@@ -559,6 +329,13 @@ export function DicomViewerApp() {
     setDicomTagDialogViewportId,
     setSettingsOpen,
   } = useViewerSessionStore(useShallow(viewerSessionSelectors.actions));
+  const {
+    hierarchy,
+    loading,
+    errorMessage,
+  } = useViewerBootstrap({
+    onViewerSettingsLoaded: setViewerSettings,
+  });
 
   const viewportIds = useMemo(
     () => getViewportLayoutSlotIds(viewportLayoutId),
@@ -582,67 +359,53 @@ export function DicomViewerApp() {
         : viewportIds,
     [isViewportMaximized, maximizedViewportId, viewportIds],
   );
-  const orderedSeriesEntries = useMemo(
-    () => getOrderedSeriesEntries(hierarchy),
-    [hierarchy],
-  );
-  const seriesEntryMap = useMemo(
-    () =>
-      new Map(orderedSeriesEntries.map((entry) => [entry.key, entry] as const)),
+  const {
+    orderedSeriesEntries,
+    seriesEntryMap,
+    activeViewportAnnotationsState,
+    activeViewportSeriesEntry,
+    activeViewportSeriesKey,
+    activeViewportCurrentFrameIndex,
+    activeViewportInvertEnabled,
+    selectedViewportMode,
+    activeViewportImageLayoutId,
+    activeViewportMprLayoutId,
+    viewerDefaultMprSlabState,
+    activeViewportMprSlabState,
+    activeViewportHasMontageLayout,
+    activeViewportCineState,
+    activeViewportCineEnabled,
+    activeViewportViewCommandsEnabled,
+    activeViewportSequenceSyncState,
+    activeViewportCrossStudyCalibrationCount,
+    referenceLineSourceViewportId,
+    referenceLineSourceState,
+    activeViewportKeyImageEntries,
+    activeViewportKeyImageListEnabled,
+  } = useSelectedViewportContext({
+    hierarchy,
+    viewerSettings,
+    selectedViewportId,
+    viewportSeriesAssignments,
+    viewportAnnotationsStateById,
+    viewportImageLayoutIdById,
+    viewportModeById,
+    viewportMprLayoutIdById,
+    viewportMprSlabStateById,
+    viewportCineStateById,
+    viewportInvertEnabled,
+    viewportKeyImagesBySeriesKey,
+    viewportSequenceSyncStateById,
+    stackViewportRuntimeStateById,
+    stackViewportReferenceLineStateById,
+    mprViewportReferenceLineStateById,
+    referenceLinesEnabled,
+    crossStudyCalibrationByPairKey,
+  });
+  const orderedSeriesKeys = useMemo(
+    () => orderedSeriesEntries.map((entry) => entry.key),
     [orderedSeriesEntries],
   );
-  const activeViewportAnnotationsState =
-    viewportAnnotationsStateById[selectedViewportId] ??
-    createEmptyViewportAnnotationsState();
-  const activeViewportSeriesEntry =
-    seriesEntryMap.get(viewportSeriesAssignments[selectedViewportId] ?? "") ??
-    null;
-  const activeViewportSeriesKey =
-    viewportSeriesAssignments[selectedViewportId] ?? null;
-  const activeViewportRuntimeState =
-    stackViewportRuntimeStateById[selectedViewportId] ?? null;
-  const activeViewportCurrentFrameIndex =
-    activeViewportRuntimeState?.status === "ready"
-      ? activeViewportRuntimeState.currentFrameIndex
-      : null;
-  const activeViewportInvertEnabled =
-    viewportInvertEnabled[selectedViewportId] ?? false;
-  const selectedViewportMode =
-    viewportModeById[selectedViewportId] ?? DEFAULT_VIEWPORT_MODE;
-  const activeViewportImageLayoutId =
-    viewportImageLayoutIdById[selectedViewportId] ??
-    DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID;
-  const activeViewportMprLayoutId =
-    viewportMprLayoutIdById[selectedViewportId] ??
-    DEFAULT_VIEWPORT_MPR_LAYOUT_ID;
-  const viewerDefaultMprSlabState = useMemo(
-    () => getViewerSettingsDefaultMprSlabState(viewerSettings),
-    [viewerSettings],
-  );
-  const activeViewportMprSlabState = normalizeViewportMprSlabState(
-    viewportMprSlabStateById[selectedViewportId],
-    viewerDefaultMprSlabState,
-  );
-  const activeViewportImageLayout = getViewportImageLayoutDefinition(
-    activeViewportImageLayoutId,
-  );
-  const activeViewportCineState = normalizeViewportCineState(
-    viewportCineStateById[selectedViewportId],
-  );
-  const activeViewportHasMontageLayout =
-    selectedViewportMode === "stack" && activeViewportImageLayout.cellCount > 1;
-  const activeViewportKeyImageEntries = useMemo(
-    () =>
-      sortKeyImageEntries(
-        viewportKeyImagesBySeriesKey[activeViewportSeriesKey ?? ""] ?? [],
-      ),
-    [activeViewportSeriesKey, viewportKeyImagesBySeriesKey],
-  );
-  const activeViewportCineEnabled = isViewportCineCompatible({
-    viewportMode: selectedViewportMode,
-    imageLayoutId: activeViewportImageLayoutId,
-    frameCount: activeViewportSeriesEntry?.series.images.length ?? 0,
-  });
   const activeViewportKeyImageEnabled =
     selectedViewportMode === "stack" &&
     activeViewportImageLayoutId === DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID &&
@@ -654,37 +417,6 @@ export function DicomViewerApp() {
       activeViewportKeyImageEntries,
       activeViewportCurrentFrameIndex,
     );
-  const activeViewportKeyImageListEnabled =
-    selectedViewportMode === "stack" &&
-    activeViewportImageLayoutId === DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID &&
-    Boolean(activeViewportSeriesEntry);
-  const activeViewportViewCommandsEnabled =
-    selectedViewportMode === "stack" && !activeViewportHasMontageLayout;
-  const activeViewportSequenceSyncState =
-    viewportSequenceSyncStateById[selectedViewportId] ??
-    DEFAULT_VIEWPORT_SEQUENCE_SYNC_STATE;
-  const activeViewportCrossStudyCalibrationCount = Object.values(
-    crossStudyCalibrationByPairKey,
-  ).filter(
-    (calibration) =>
-      calibration.leftViewportId === selectedViewportId ||
-      calibration.rightViewportId === selectedViewportId,
-  ).length;
-  const referenceLineSourceViewportId =
-    referenceLinesEnabled &&
-    ((selectedViewportMode === "stack" &&
-      activeViewportImageLayoutId === DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID) ||
-      selectedViewportMode === "mpr")
-      ? selectedViewportId
-      : null;
-  const referenceLineSourceState =
-    referenceLineSourceViewportId != null
-      ? (selectedViewportMode === "mpr"
-          ? (mprViewportReferenceLineStateById[referenceLineSourceViewportId] ??
-            null)
-          : (stackViewportReferenceLineStateById[referenceLineSourceViewportId] ??
-            null))
-      : null;
 
   const dispatchSequenceSyncFromViewport = useCallback(
     (sourceViewportId: string) => {
@@ -1950,232 +1682,42 @@ export function DicomViewerApp() {
     setSettingsOpen(false);
   };
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadHierarchy() {
-      try {
-        setLoading(true);
-        setErrorMessage(null);
-
-        const [hierarchyResponse, settingsResponse] = await Promise.all([
-          fetch("/api/hierarchy", {
-            cache: "no-store",
-          }),
-          fetch("/api/settings", {
-            cache: "no-store",
-          }),
-        ]);
-
-        if (!hierarchyResponse.ok) {
-          throw new Error("Hierarchy request failed");
-        }
-
-        const [hierarchyPayload, settingsPayload] = await Promise.all([
-          hierarchyResponse.json() as Promise<DicomHierarchyResponse>,
-          settingsResponse.ok
-            ? (settingsResponse.json() as Promise<ViewerSettings>)
-            : Promise.resolve(createDefaultViewerSettings()),
-        ]);
-
-        if (cancelled) {
-          return;
-        }
-
-        setHierarchy(hierarchyPayload);
-        setViewerSettings(normalizeViewerSettings(settingsPayload));
-      } catch (error) {
-        console.error("Failed to fetch hierarchy", error);
-
-        if (!cancelled) {
-          setErrorMessage(
-            "无法加载层级结构接口，请检查本地 DICOM 目录和 API。",
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadHierarchy();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [setViewerSettings]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat) {
-        return;
-      }
-
-      if (
-        settingsOpen ||
-        annotationListOpen ||
-        keyImageListOpen ||
-        dicomTagDialogViewportId
-      ) {
-        return;
-      }
-
-      if (document.querySelector(".ant-modal-root .ant-modal-wrap")) {
-        return;
-      }
-
-      if (isEditableKeyboardTarget(event.target)) {
-        return;
-      }
-
-      const binding = getToolbarShortcutBindingFromKeyboardEvent(event);
-
-      if (!binding) {
-        return;
-      }
-
-      const commandId = findToolbarShortcutCommandId(
-        viewerSettings.toolbarShortcuts.bindings,
-        binding,
-      );
-
-      if (!commandId) {
-        return;
-      }
-
-      if (commandId !== "settings" && !orderedSeriesEntries.length) {
-        return;
-      }
-
-      event.preventDefault();
-
-      if (commandId === "settings") {
-        setSettingsOpen(true);
-        return;
-      }
-
-      if (isToolbarShortcutToolCommand(commandId)) {
-        handleViewportToolChange(commandId);
-        return;
-      }
-
-      handleViewportAction(commandId);
-    };
-
-    window.addEventListener("keydown", handleKeyDown, true);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [
-    annotationListOpen,
-    dicomTagDialogViewportId,
-    handleViewportAction,
-    handleViewportToolChange,
-    keyImageListOpen,
-    orderedSeriesEntries.length,
-    setSettingsOpen,
+  useViewerKeyboardShortcuts({
+    viewerSettings,
     settingsOpen,
-    viewerSettings.toolbarShortcuts.bindings,
-  ]);
+    annotationListOpen,
+    keyImageListOpen,
+    dicomTagDialogViewportId,
+    orderedSeriesEntryCount: orderedSeriesEntries.length,
+    onOpenSettings: () => setSettingsOpen(true),
+    onViewportToolChange: handleViewportToolChange,
+    onViewportAction: handleViewportAction,
+  });
 
-  useEffect(() => {
-    const nextViewportIds = getViewportLayoutSlotIds(viewportLayoutId);
-    const nextOrderedSeriesKeys = getOrderedSeriesEntries(hierarchy).map(
-      (entry) => entry.key,
-    );
-
-    setViewportSeriesAssignments((previous) =>
-      buildViewportSeriesAssignments(
-        nextViewportIds,
-        previous,
-        nextOrderedSeriesKeys,
-      ),
-    );
-    setViewportInvertEnabled((previous) =>
-      alignViewportBooleanState(nextViewportIds, previous, false),
-    );
-    setViewportAnnotationsStateById((previous) =>
-      alignViewportAnnotationStateMap(nextViewportIds, previous),
-    );
-    setViewportImageLayoutIdById((previous) =>
-      alignViewportImageLayoutState(nextViewportIds, previous),
-    );
-    setViewportModeById((previous) =>
-      alignViewportModeState(nextViewportIds, previous),
-    );
-    setViewportMprLayoutIdById((previous) =>
-      alignViewportMprLayoutState(nextViewportIds, previous),
-    );
-    setViewportCellSelectionById((previous) =>
-      alignViewportCellSelectionState(nextViewportIds, previous),
-    );
-    setViewportCineStateById((previous) =>
-      alignViewportCineState(nextViewportIds, previous),
-    );
-    setViewportSequenceSyncStateById((previous) =>
-      alignViewportSequenceSyncState(nextViewportIds, previous),
-    );
-    setStackViewportRuntimeStateById((previous) =>
-      alignViewportNullableStateMap(nextViewportIds, previous),
-    );
-    setStackViewportReferenceLineStateById((previous) =>
-      alignViewportNullableStateMap(nextViewportIds, previous),
-    );
-    setMprViewportReferenceLineStateById((previous) =>
-      alignViewportNullableStateMap(nextViewportIds, previous),
-    );
-    setStackViewportPresentationStateById((previous) =>
-      alignViewportNullableStateMap(nextViewportIds, previous),
-    );
-    setViewportStackNavigationCommandById((previous) =>
-      alignViewportNullableStateMap(nextViewportIds, previous),
-    );
-    setViewportSequenceSyncCommandById((previous) =>
-      alignViewportNullableStateMap(nextViewportIds, previous),
-    );
-    setViewportPresentationSyncCommandById((previous) =>
-      alignViewportNullableStateMap(nextViewportIds, previous),
-    );
-    setViewportMprCrosshairSyncCommandById((previous) =>
-      alignViewportNullableStateMap(nextViewportIds, previous),
-    );
-    setDicomTagDialogViewportId((previous) =>
-      previous && nextViewportIds.includes(previous) ? previous : null,
-    );
-    setSelectedViewportId((previous) =>
-      nextViewportIds.includes(previous)
-        ? previous
-        : (nextViewportIds[0] ?? "viewport-1"),
-    );
-    setMaximizedViewportId((previous) =>
-      previous && nextViewportIds.includes(previous) ? previous : null,
-    );
-  }, [
-    hierarchy,
-    setDicomTagDialogViewportId,
-    setMaximizedViewportId,
-    setMprViewportReferenceLineStateById,
-    setSelectedViewportId,
-    setStackViewportReferenceLineStateById,
-    setStackViewportPresentationStateById,
-    setStackViewportRuntimeStateById,
-    setViewportAnnotationsStateById,
-    setViewportCellSelectionById,
-    setViewportCineStateById,
-    setViewportImageLayoutIdById,
+  useViewportLayoutSession({
+    hierarchySeriesKeys: orderedSeriesKeys,
+    viewportLayoutId,
+    setViewportSeriesAssignments,
     setViewportInvertEnabled,
+    setViewportAnnotationsStateById,
+    setViewportImageLayoutIdById,
     setViewportModeById,
     setViewportMprLayoutIdById,
-    setViewportMprCrosshairSyncCommandById,
-    setViewportPresentationSyncCommandById,
+    setViewportCellSelectionById,
+    setViewportCineStateById,
+    setViewportSequenceSyncStateById,
+    setStackViewportRuntimeStateById,
+    setStackViewportReferenceLineStateById,
+    setMprViewportReferenceLineStateById,
+    setStackViewportPresentationStateById,
     setViewportStackNavigationCommandById,
     setViewportSequenceSyncCommandById,
-    setViewportSequenceSyncStateById,
-    setViewportSeriesAssignments,
-    viewportLayoutId,
-  ]);
+    setViewportPresentationSyncCommandById,
+    setViewportMprCrosshairSyncCommandById,
+    setDicomTagDialogViewportId,
+    setSelectedViewportId,
+    setMaximizedViewportId,
+  });
 
   useEffect(() => {
     setViewportCineStateById((previous) => {

@@ -16,6 +16,7 @@ import {
   getSharedCornerstoneRenderingEngineId,
   scheduleSharedCornerstoneRenderingEngineDestroy,
 } from "@/lib/cornerstone/rendering-engine";
+import { useViewportContainerSize } from "@/lib/cornerstone/viewport-runtime/use-viewport-container-size";
 import {
   acquireSeriesVolume,
   releaseSeriesVolume,
@@ -426,8 +427,8 @@ export function MprViewport({
   const [activePaneId, setActivePaneId] = useState<ViewportMprPaneId>("axial");
   const [appliedCrosshairSyncCommandId, setAppliedCrosshairSyncCommandId] =
     useState(0);
-  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [viewportRuntimeReady, setViewportRuntimeReady] = useState(false);
+  const viewportSize = useViewportContainerSize(stageRef, viewportKey);
   const [viewportRuntimeSeed, setViewportRuntimeSeed] = useState(0);
   const [paneSnapshots, setPaneSnapshots] = useState(createEmptyMprPaneSnapshots);
   const [referenceLineSegmentByPaneId, setReferenceLineSegmentByPaneId] =
@@ -787,42 +788,6 @@ export function MprViewport({
   useEffect(() => {
     syncReferenceLineSegments();
   }, [syncReferenceLineSegments]);
-
-  useEffect(() => {
-    const stageElement = stageRef.current;
-
-    if (!stageElement) {
-      return;
-    }
-
-    const updateViewportSize = () => {
-      const nextWidth = Math.round(stageElement.clientWidth);
-      const nextHeight = Math.round(stageElement.clientHeight);
-
-      setViewportSize((previous) =>
-        previous.width === nextWidth && previous.height === nextHeight
-          ? previous
-          : {
-              width: nextWidth,
-              height: nextHeight,
-            },
-      );
-    };
-
-    updateViewportSize();
-
-    const observer = new ResizeObserver(() => {
-      updateViewportSize();
-    });
-
-    observer.observe(stageElement);
-    window.addEventListener("resize", updateViewportSize);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updateViewportSize);
-    };
-  }, [viewportKey]);
 
   useEffect(() => {
     if (!containerReady) {
