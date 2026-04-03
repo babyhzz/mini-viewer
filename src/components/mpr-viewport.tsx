@@ -5,7 +5,6 @@ import { Spin } from "antd";
 
 import { AppIcon } from "@/components/app-icon";
 import { DicomTagModal } from "@/components/dicom-tag-modal";
-import type { ViewportAnnotationsState } from "@/components/viewport-annotations";
 import {
   buildOverlayContextValueMap,
   ViewportOverlayLayer,
@@ -55,6 +54,7 @@ import {
   type ViewportReferenceLineSegment,
 } from "@/lib/viewports/reference-lines";
 import type { DicomImageNode, DicomSeriesNode, DicomStudyNode } from "@/types/dicom";
+import type { ViewportAnnotationsState } from "@/types/viewport-annotations";
 import type { ViewportOverlaySettings } from "@/types/settings";
 
 type ViewportStatus = "idle" | "loading" | "ready" | "error";

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App, InputNumber, Spin } from "antd";
+import { useShallow } from "zustand/react/shallow";
 
 import { AnnotationListDrawer } from "@/components/annotation-list-drawer";
 import { AppIcon } from "@/components/app-icon";
@@ -10,7 +11,7 @@ import { MprViewport } from "@/components/mpr-viewport";
 import {
   createEmptyViewportAnnotationsState,
   type ViewportAnnotationsState,
-} from "@/components/viewport-annotations";
+} from "@/types/viewport-annotations";
 import { StackViewport } from "@/components/stack-viewport";
 import { ThumbnailCanvas } from "@/components/thumbnail-canvas";
 import { ViewerSettingsDrawer } from "@/components/viewer-settings-drawer";
@@ -105,15 +106,17 @@ import type {
   DicomStudyNode,
 } from "@/types/dicom";
 import type { ViewerSettings } from "@/types/settings";
-import { useViewerSessionStore } from "@/stores/viewer-session-store";
+import { viewerSessionSelectors } from "@/stores/viewer-session/selectors";
+import {
+  useViewerSessionStore,
+  type ViewportCellSelection,
+} from "@/stores/viewer-session-store";
 
 interface SelectedSeries {
   key: string;
   study: DicomStudyNode;
   series: DicomSeriesNode;
 }
-
-type ViewportCellSelection = "all" | number;
 
 type ViewportAnnotationCommandInput =
   | {
@@ -475,7 +478,6 @@ export function DicomViewerApp() {
     Record<string, string>
   >({});
   const processedManualSequenceSyncRequestIdRef = useRef(0);
-  const viewerSession = useViewerSessionStore();
   const [hierarchy, setHierarchy] = useState<DicomHierarchyResponse | null>(
     null,
   );
@@ -483,74 +485,80 @@ export function DicomViewerApp() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const {
     viewerSettings,
-    setViewerSettings,
     activeViewportTool,
-    setActiveViewportTool,
     viewportLayoutId,
-    setViewportLayoutId,
     maximizedViewportId,
-    setMaximizedViewportId,
     selectedViewportId,
-    setSelectedViewportId,
-    referenceLinesEnabled,
-    setReferenceLinesEnabled,
-    viewportSeriesAssignments,
-    setViewportSeriesAssignments,
-    viewportInvertEnabled,
-    setViewportInvertEnabled,
-    viewportToolGroupSelections,
-    setViewportToolGroupSelections,
-    annotationCommand,
-    setAnnotationCommand,
-    viewCommand,
-    setViewCommand,
-    viewportAnnotationsStateById,
-    setViewportAnnotationsStateById,
-    viewportImageLayoutIdById,
-    setViewportImageLayoutIdById,
-    viewportModeById,
-    setViewportModeById,
-    viewportMprLayoutIdById,
-    setViewportMprLayoutIdById,
-    viewportMprSlabStateById,
-    setViewportMprSlabStateById,
-    viewportCellSelectionById,
-    setViewportCellSelectionById,
-    viewportCineStateById,
-    setViewportCineStateById,
-    viewportKeyImagesBySeriesKey,
-    setViewportKeyImagesBySeriesKey,
-    viewportSequenceSyncStateById,
-    setViewportSequenceSyncStateById,
-    stackViewportRuntimeStateById,
-    setStackViewportRuntimeStateById,
-    stackViewportReferenceLineStateById,
-    setStackViewportReferenceLineStateById,
-    mprViewportReferenceLineStateById,
-    setMprViewportReferenceLineStateById,
-    stackViewportPresentationStateById,
-    setStackViewportPresentationStateById,
-    viewportStackNavigationCommandById,
-    setViewportStackNavigationCommandById,
-    viewportSequenceSyncCommandById,
-    setViewportSequenceSyncCommandById,
-    viewportPresentationSyncCommandById,
-    setViewportPresentationSyncCommandById,
-    viewportMprCrosshairSyncCommandById,
-    setViewportMprCrosshairSyncCommandById,
-    crossStudyCalibrationByPairKey,
-    setCrossStudyCalibrationByPairKey,
-    manualSequenceSyncRequest,
-    setManualSequenceSyncRequest,
     annotationListOpen,
-    setAnnotationListOpen,
     keyImageListOpen,
-    setKeyImageListOpen,
     dicomTagDialogViewportId,
-    setDicomTagDialogViewportId,
     settingsOpen,
+  } = useViewerSessionStore(useShallow(viewerSessionSelectors.uiState));
+  const {
+    viewportSeriesAssignments,
+    viewportInvertEnabled,
+    viewportToolGroupSelections,
+    annotationCommand,
+    viewCommand,
+    viewportAnnotationsStateById,
+    viewportImageLayoutIdById,
+    viewportModeById,
+    viewportMprLayoutIdById,
+    viewportMprSlabStateById,
+    viewportCellSelectionById,
+    viewportCineStateById,
+    viewportKeyImagesBySeriesKey,
+    stackViewportRuntimeStateById,
+    viewportStackNavigationCommandById,
+  } = useViewerSessionStore(useShallow(viewerSessionSelectors.viewportState));
+  const {
+    referenceLinesEnabled,
+    viewportSequenceSyncStateById,
+    stackViewportReferenceLineStateById,
+    mprViewportReferenceLineStateById,
+    stackViewportPresentationStateById,
+    viewportSequenceSyncCommandById,
+    viewportPresentationSyncCommandById,
+    viewportMprCrosshairSyncCommandById,
+    crossStudyCalibrationByPairKey,
+    manualSequenceSyncRequest,
+  } = useViewerSessionStore(useShallow(viewerSessionSelectors.syncState));
+  const {
+    setViewerSettings,
+    setActiveViewportTool,
+    setViewportLayoutId,
+    setMaximizedViewportId,
+    setSelectedViewportId,
+    setReferenceLinesEnabled,
+    setViewportSeriesAssignments,
+    setViewportInvertEnabled,
+    setViewportToolGroupSelections,
+    setAnnotationCommand,
+    setViewCommand,
+    setViewportAnnotationsStateById,
+    setViewportImageLayoutIdById,
+    setViewportModeById,
+    setViewportMprLayoutIdById,
+    setViewportMprSlabStateById,
+    setViewportCellSelectionById,
+    setViewportCineStateById,
+    setViewportKeyImagesBySeriesKey,
+    setViewportSequenceSyncStateById,
+    setStackViewportRuntimeStateById,
+    setStackViewportReferenceLineStateById,
+    setMprViewportReferenceLineStateById,
+    setStackViewportPresentationStateById,
+    setViewportStackNavigationCommandById,
+    setViewportSequenceSyncCommandById,
+    setViewportPresentationSyncCommandById,
+    setViewportMprCrosshairSyncCommandById,
+    setCrossStudyCalibrationByPairKey,
+    setManualSequenceSyncRequest,
+    setAnnotationListOpen,
+    setKeyImageListOpen,
+    setDicomTagDialogViewportId,
     setSettingsOpen,
-  } = viewerSession;
+  } = useViewerSessionStore(useShallow(viewerSessionSelectors.actions));
 
   const viewportIds = useMemo(
     () => getViewportLayoutSlotIds(viewportLayoutId),

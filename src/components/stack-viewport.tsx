@@ -20,7 +20,7 @@ import { DicomTagModal } from "@/components/dicom-tag-modal";
 import {
   createEmptyViewportAnnotationsState,
   type ViewportAnnotationsState,
-} from "@/components/viewport-annotations";
+} from "@/types/viewport-annotations";
 import {
   buildOverlayContextValueMap,
   ViewportOverlayLayer,
