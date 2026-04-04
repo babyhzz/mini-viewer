@@ -20,6 +20,7 @@ import { ThumbnailCanvas } from "@/components/thumbnail-canvas";
 import { ViewerSettingsDrawer } from "@/components/viewer-settings-drawer";
 import { ViewportToolbar } from "@/components/viewport-toolbar";
 import { initializeCornerstone } from "@/lib/cornerstone/init";
+import { cn } from "@/lib/utils/classnames";
 import {
   getViewerSettingsDefaultMprSlabState,
   normalizeViewerSettings,
@@ -2212,7 +2213,13 @@ export function DicomViewerApp() {
                           <button
                             key={seriesKey}
                             type="button"
-                            className={`series-card${isSelected ? " is-selected" : ""}${assignedViewportCount > 0 && !isSelected ? " is-assigned" : ""}`}
+                            className={cn(
+                              "series-card",
+                              isSelected && "is-selected",
+                              assignedViewportCount > 0 &&
+                                !isSelected &&
+                                "is-assigned",
+                            )}
                             data-testid="series-card"
                             data-series-title={series.title}
                             data-image-count={series.imageCount}
@@ -2357,7 +2364,11 @@ export function DicomViewerApp() {
               return (
                 <div
                   key={viewportId}
-                  className={`viewport-slot${selectedViewportId === viewportId ? " is-selected" : ""}${maximizedViewportId === viewportId ? " is-maximized" : ""}`}
+                  className={cn(
+                    "viewport-slot",
+                    selectedViewportId === viewportId && "is-selected",
+                    maximizedViewportId === viewportId && "is-maximized",
+                  )}
                   data-testid={`viewport-slot-${viewportId}`}
                   data-viewport-id={viewportId}
                   data-viewport-mode={

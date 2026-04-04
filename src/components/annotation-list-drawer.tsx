@@ -3,6 +3,7 @@
 import { Button, Drawer, Empty, Tag } from "antd";
 
 import { AppIcon } from "@/components/app-icon";
+import { cn } from "@/lib/utils/classnames";
 import type { ViewportAnnotationEntry } from "@/lib/tools/cornerstone-tool-adapter";
 
 interface AnnotationListDrawerProps {
@@ -71,7 +72,10 @@ export function AnnotationListDrawer({
           {annotations.map((annotation) => (
             <div
               key={annotation.annotationUID}
-              className={`annotation-list-item${annotation.isSelected ? " is-selected" : ""}`}
+              className={cn(
+                "annotation-list-item",
+                annotation.isSelected && "is-selected",
+              )}
               data-testid="annotation-list-item"
               data-annotation-uid={annotation.annotationUID}
               data-selected={String(annotation.isSelected)}

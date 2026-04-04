@@ -3,6 +3,7 @@
 import { Button, Drawer, Empty, Tag } from "antd";
 
 import { AppIcon } from "@/components/app-icon";
+import { cn } from "@/lib/utils/classnames";
 import type { KeyImageEntry } from "@/lib/viewports/key-images";
 
 interface KeyImageDrawerProps {
@@ -89,7 +90,7 @@ export function KeyImageDrawer({
             return (
               <div
                 key={entry.id}
-                className={`key-image-item${isSelected ? " is-selected" : ""}`}
+                className={cn("key-image-item", isSelected && "is-selected")}
                 data-testid="key-image-item"
                 data-frame-index={entry.frameIndex}
                 data-selected={String(isSelected)}

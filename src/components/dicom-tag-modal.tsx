@@ -5,6 +5,7 @@ import { Alert, Empty, Input, Modal, Spin, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { ReactNode } from "react";
 
+import { cn } from "@/lib/utils/classnames";
 import type { DicomImageNode, DicomTagNode, DicomTagResponse } from "@/types/dicom";
 
 export interface DicomTagModalSource {
@@ -91,9 +92,7 @@ const DICOM_TAG_COLUMNS: ColumnsType<DicomTagTableRow> = [
     key: "tag",
     width: 132,
     render: (_, row) => (
-      <span className="dicom-tag-table-tag">
-        {row.nodeType === "item" ? row.displayTag : row.displayTag}
-      </span>
+      <span className="dicom-tag-table-tag">{row.displayTag}</span>
     ),
   },
   {
@@ -152,7 +151,12 @@ function renderDicomTagExpandIcon({
   return (
     <button
       type="button"
-      className={`ant-table-row-expand-icon ${expanded ? "ant-table-row-expand-icon-expanded" : "ant-table-row-expand-icon-collapsed"}`}
+      className={cn(
+        "ant-table-row-expand-icon",
+        expanded
+          ? "ant-table-row-expand-icon-expanded"
+          : "ant-table-row-expand-icon-collapsed",
+      )}
       aria-label={expanded ? "收起" : "展开"}
       onClick={(event) => {
         onExpand(record, event);

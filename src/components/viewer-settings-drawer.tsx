@@ -19,6 +19,7 @@ import type { Color } from "antd/es/color-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppIcon } from "@/components/app-icon";
+import { cn } from "@/lib/utils/classnames";
 import {
   cloneViewerSettings,
   createDefaultViewerSettings,
@@ -987,7 +988,10 @@ export function ViewerSettingsDrawer({
                                 return (
                                   <div
                                     key={definition.id}
-                                    className={`viewer-settings-shortcut-item${isRecording ? " is-recording" : ""}`}
+                                    className={cn(
+                                      "viewer-settings-shortcut-item",
+                                      isRecording && "is-recording",
+                                    )}
                                   >
                                     <div className="viewer-settings-shortcut-item-main">
                                       <span

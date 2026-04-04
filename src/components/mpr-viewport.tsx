@@ -54,6 +54,7 @@ import {
   type StackViewportReferenceLineState,
   type ViewportReferenceLineSegment,
 } from "@/lib/viewports/reference-lines";
+import { cn } from "@/lib/utils/classnames";
 import type { DicomImageNode, DicomSeriesNode, DicomStudyNode } from "@/types/dicom";
 import type { ViewportAnnotationsState } from "@/types/viewport-annotations";
 import type { ViewportOverlaySettings } from "@/types/settings";
@@ -1404,7 +1405,11 @@ export function MprViewport({
   return (
     <div
       ref={stageRef}
-      className={`viewport-stage viewport-stage-mpr${isSelected ? " is-selected" : ""}`}
+      className={cn(
+        "viewport-stage",
+        "viewport-stage-mpr",
+        isSelected && "is-selected",
+      )}
       data-testid="viewport-stage"
       data-active-tool={effectiveTool}
       data-invert-enabled={String(invertEnabled)}
@@ -1442,7 +1447,7 @@ export function MprViewport({
       }}
     >
       <div
-        className={`mpr-pane-grid mpr-pane-grid-${mprLayoutId}`}
+        className={cn("mpr-pane-grid", `mpr-pane-grid-${mprLayoutId}`)}
         data-testid="mpr-pane-grid"
         style={{
           gridTemplateColumns: `repeat(${mprLayoutDefinition.columns}, minmax(0, 1fr))`,
@@ -1482,7 +1487,11 @@ export function MprViewport({
           return (
             <div
               key={pane.id}
-              className={`mpr-pane-shell${activePaneId === pane.id ? " is-selected" : ""}${isReferenceLineSourcePane ? " is-reference-line-source" : ""}`}
+              className={cn(
+                "mpr-pane-shell",
+                activePaneId === pane.id && "is-selected",
+                isReferenceLineSourcePane && "is-reference-line-source",
+              )}
               data-testid="mpr-pane"
               data-pane-id={pane.id}
               data-pane-label={pane.label}

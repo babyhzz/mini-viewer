@@ -9,6 +9,7 @@ import type {
   ViewportCorner,
   ViewportOverlaySettings,
 } from "@/types/settings";
+import { cn } from "@/lib/utils/classnames";
 
 export interface OverlayContextValueMap {
   patientName: string;
@@ -109,7 +110,7 @@ export function ViewportOverlayLayer({
       return (
         <div
           key={corner}
-          className={`viewport-corner ${VIEWPORT_OVERLAY_CLASS_NAMES[corner]}`}
+          className={cn("viewport-corner", VIEWPORT_OVERLAY_CLASS_NAMES[corner])}
           data-testid={testIds?.[corner]}
         >
           {items.map((item) => {

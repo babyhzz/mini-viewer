@@ -72,6 +72,7 @@ import {
   type ViewportSequenceSyncCommand,
   type ViewportSequenceSyncState,
 } from "@/lib/viewports/sequence-sync";
+import { cn } from "@/lib/utils/classnames";
 import {
   getViewportWindowPresetDefinition,
   type ViewportViewCommand,
@@ -963,7 +964,12 @@ function ViewportImageLayoutCanvas({
   return (
     <div
       ref={cellRef}
-      className={`viewport-image-layout-cell${!image ? " is-empty" : ""}${hasError ? " is-error" : ""}${selectionState !== "none" ? " is-selected" : ""}`}
+      className={cn(
+        "viewport-image-layout-cell",
+        !image && "is-empty",
+        hasError && "is-error",
+        selectionState !== "none" && "is-selected",
+      )}
       data-testid="viewport-image-layout-cell"
       data-cell-index={cellIndex}
       data-cell-selected={String(selectionState !== "none")}
@@ -976,7 +982,10 @@ function ViewportImageLayoutCanvas({
         data-testid="viewport-image-layout-canvas"
         data-source-width={sourceDimensions.width}
         data-source-height={sourceDimensions.height}
-        className={`viewport-image-layout-canvas${invertEnabled ? " is-inverted" : ""}`}
+        className={cn(
+          "viewport-image-layout-canvas",
+          invertEnabled && "is-inverted",
+        )}
         width={sourceDimensions.width}
         height={sourceDimensions.height}
         style={canvasDisplayStyle}
@@ -2608,7 +2617,7 @@ export function StackViewport({
 
   return (
     <div
-      className={`viewport-stage${isSelected ? " is-selected" : ""}`}
+      className={cn("viewport-stage", isSelected && "is-selected")}
       data-testid="viewport-stage"
       data-active-tool={activeTool}
       data-invert-enabled={String(invertEnabled)}
@@ -2699,7 +2708,11 @@ export function StackViewport({
       ) : null}
       <div
         ref={elementRef}
-        className={`viewport-canvas${hasMontageImageLayout ? " is-driver-hidden" : ""}${isMontageDriverInteractive ? " is-driver-interactive" : ""}`}
+        className={cn(
+          "viewport-canvas",
+          hasMontageImageLayout && "is-driver-hidden",
+          isMontageDriverInteractive && "is-driver-interactive",
+        )}
       />
       {hasViewportScrollIndicator ? (
         <div

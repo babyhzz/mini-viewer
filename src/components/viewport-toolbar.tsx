@@ -60,6 +60,7 @@ import {
   getViewportWindowPresetDefinitions,
   type ViewportWindowPresetId,
 } from "@/lib/viewports/view-commands";
+import { cn } from "@/lib/utils/classnames";
 
 interface ViewportToolbarProps {
   activeTool: ViewportTool;
@@ -340,7 +341,7 @@ function renderLayoutMenuOption({
       aria-label={`${label} · ${description}`}
     >
       <div
-        className={`viewport-layout-preview${inactive ? " is-inactive" : ""}`}
+        className={cn("viewport-layout-preview", inactive && "is-inactive")}
         aria-hidden="true"
         style={{
           gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
@@ -944,7 +945,11 @@ export function ViewportToolbar({
               return (
                 <div
                   key={item.id}
-                  className={`viewport-tool-group${isActiveGroup ? " is-active" : ""}${itemDisabled ? " is-disabled" : ""}`}
+                  className={cn(
+                    "viewport-tool-group",
+                    isActiveGroup && "is-active",
+                    itemDisabled && "is-disabled",
+                  )}
                   data-testid={`viewport-tool-group-${item.id}`}
                 >
                   <button
@@ -1020,7 +1025,11 @@ export function ViewportToolbar({
                 >
                   <button
                     type="button"
-                    className={`viewport-tool-button has-menu${isToggled ? " is-toggled" : ""}`}
+                    className={cn(
+                      "viewport-tool-button",
+                      "has-menu",
+                      isToggled && "is-toggled",
+                    )}
                     data-testid={menuConfig.buttonTestId}
                     data-tool-id={item.id}
                     data-tool-kind={item.kind}
@@ -1092,7 +1101,11 @@ export function ViewportToolbar({
               <button
                 key={item.id}
                 type="button"
-                className={`viewport-tool-button${isCurrentTool ? " is-active" : ""}${isToggledAction ? " is-toggled" : ""}`}
+                className={cn(
+                  "viewport-tool-button",
+                  isCurrentTool && "is-active",
+                  isToggledAction && "is-toggled",
+                )}
                 data-testid={dataTestId}
                 data-tool-id={item.id}
                 data-tool-kind={item.kind}
