@@ -5,10 +5,93 @@ import {
   expectViewportReady,
 } from "./viewer-expect";
 
-export async function waitForViewerReady(page: Page) {
+interface ViewerOpenOptions {
+  width?: number;
+  height?: number;
+  waitFor?: "shell" | "viewport";
+}
+
+function getWaitForMode(options?: ViewerOpenOptions) {
+  return options?.waitFor ?? "viewport";
+}
+
+export async function openViewer(page: Page, options?: ViewerOpenOptions) {
+  if (options?.width && options?.height) {
+    await page.setViewportSize({
+      width: options.width,
+      height: options.height,
+    });
+  }
+
   await page.goto("/");
   await expectViewerShellReady(page);
-  await expectViewportReady(page);
+
+  if (getWaitForMode(options) === "viewport") {
+    await expectViewportReady(page);
+  }
+}
+
+export async function waitForViewerReady(page: Page) {
+  await openViewer(page);
+}
+
+export async function openDesktopViewer(
+  page: Page,
+  width = 1440,
+  height = 900,
+) {
+  await openViewer(page, {
+    width,
+    height,
+  });
+}
+
+export async function openMobileViewer(
+  page: Page,
+  width = 390,
+  height = 844,
+) {
+  await openViewer(page, {
+    width,
+    height,
+  });
+}
+
+export async function setViewportLayout(page: Page, layoutId: string) {
+  await page.getByTestId("viewport-layout-button").click();
+  await page.getByTestId(`viewport-layout-option-${layoutId}`).click();
+}
+
+export async function setViewportMprLayout(
+  page: Page,
+  layoutId: string | "off",
+) {
+  await page.getByTestId("viewport-mpr-layout-button").click();
+  await page.getByTestId(`viewport-mpr-layout-option-${layoutId}`).click();
+}
+
+export function getViewportStage(page: Page, viewportId = "viewport-1") {
+  if (viewportId === "viewport-1") {
+    return page.getByTestId("viewport-stage");
+  }
+
+  return page
+    .getByTestId(`viewport-slot-${viewportId}`)
+    .getByTestId("viewport-stage");
+}
+
+export async function selectViewport(
+  page: Page,
+  viewportId = "viewport-1",
+  x = 24,
+  y = 24,
+) {
+  await getViewportStage(page, viewportId).click({
+    position: {
+      x,
+      y,
+    },
+  });
 }
 
 export async function toggleSequenceSync(

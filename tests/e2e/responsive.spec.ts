@@ -1,12 +1,20 @@
 import { expect, test } from "@playwright/test";
-import { waitForViewerReady } from "./support/viewer-page";
+import {
+  openDesktopViewer,
+  openMobileViewer,
+  waitForViewerReady,
+} from "./support/viewer-page";
+import { mockDefaultViewerSettings } from "./support/viewer-settings";
 
 test.describe("DICOM viewer smoke coverage", () => {
-  test("desktop layout keeps both panels fully visible without page clipping", async ({
+  test.beforeEach(async ({ page }) => {
+    await mockDefaultViewerSettings(page);
+  });
+
+  test("desktop layout keeps both panels fully visible without page clipping @smoke", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
     const metrics = await page.evaluate(() => {
       const shell = document.querySelector('[data-testid="viewer-shell"]');
@@ -66,8 +74,7 @@ test.describe("DICOM viewer smoke coverage", () => {
   });
 
   test("13-inch mac layout stays dense and flat", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page, 1280, 800);
 
     const metrics = await page.evaluate(() => {
       const sidebar = document.querySelector('[data-testid="sidebar-panel"]');
@@ -141,8 +148,7 @@ test.describe("DICOM viewer smoke coverage", () => {
   test("viewport responds to resize without losing readiness", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
     const viewportStage = page.getByTestId("viewport-stage");
     const initialViewportSize =
@@ -160,8 +166,7 @@ test.describe("DICOM viewer smoke coverage", () => {
   test("narrow layout stacks panels without horizontal overflow", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await waitForViewerReady(page);
+    await openMobileViewer(page);
 
     const metrics = await page.evaluate(() => {
       const sidebar = document.querySelector('[data-testid="sidebar-panel"]');

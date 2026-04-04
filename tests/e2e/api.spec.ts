@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("DICOM viewer smoke coverage", () => {
-  test("hierarchy api exposes the local study tree", async ({ request }) => {
+  test("hierarchy api exposes the local study tree @smoke", async ({ request }) => {
     const response = await request.get("/api/hierarchy");
 
     expect(response.ok()).toBeTruthy();
@@ -63,7 +63,7 @@ test.describe("DICOM viewer smoke coverage", () => {
     }
   });
 
-  test("settings api exposes the default overlay configuration", async ({
+  test("settings api exposes the default overlay configuration @smoke", async ({
     request,
   }) => {
     const response = await request.get("/api/settings");

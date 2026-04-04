@@ -1,7 +1,19 @@
 import { expect, test } from "@playwright/test";
-import { waitForViewerReady, selectToolbarTool, selectWindowPreset, runViewAction, scrollViewportFrames } from "./support/viewer-page";
+import {
+  openDesktopViewer,
+  runViewAction,
+  scrollViewportFrames,
+  selectToolbarTool,
+  selectWindowPreset,
+  waitForViewerReady,
+} from "./support/viewer-page";
+import { mockDefaultViewerSettings } from "./support/viewer-settings";
 
 test.describe("DICOM viewer smoke coverage", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockDefaultViewerSettings(page);
+  });
+
   test("cine tool can play and pause stack playback on the selected viewport", async ({
     page,
   }) => {
@@ -227,11 +239,10 @@ test.describe("DICOM viewer smoke coverage", () => {
     await expect(page.getByTestId("dicom-tag-modal")).not.toBeVisible();
   });
 
-  test("select tool is the default and left-drag scrolls the stack", async ({
+  test("select tool is the default and left-drag scrolls the stack @smoke", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
     const viewportStage = page.getByTestId("viewport-stage");
     const viewportScrollbar = page.getByTestId("viewport-scrollbar");

@@ -4,14 +4,17 @@ const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 3100);
 const HOST = "127.0.0.1";
 const BASE_URL = `http://${HOST}:${PORT}`;
 const useDevServer = process.env.PLAYWRIGHT_WEB_SERVER_MODE === "dev";
+const workerCount = process.env.CI
+  ? 1
+  : Math.max(1, Number(process.env.PLAYWRIGHT_WORKERS ?? 2));
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  fullyParallel: true,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   timeout: 60_000,
-  workers: 1,
+  workers: workerCount,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: BASE_URL,
@@ -24,7 +27,7 @@ export default defineConfig({
       ? `npm run dev -- --hostname ${HOST} --port ${PORT}`
       : `npm run start -- --hostname ${HOST} --port ${PORT}`,
     url: BASE_URL,
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
   projects: [

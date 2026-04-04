@@ -1,8 +1,17 @@
 import { expect, test } from "@playwright/test";
-import { waitForViewerReady } from "./support/viewer-page";
+import {
+  openDesktopViewer,
+  setViewportLayout,
+  waitForViewerReady,
+} from "./support/viewer-page";
+import { mockDefaultViewerSettings } from "./support/viewer-settings";
 
 test.describe("DICOM viewer smoke coverage", () => {
-  test("home page loads navigator and renders an active viewport", async ({
+  test.beforeEach(async ({ page }) => {
+    await mockDefaultViewerSettings(page);
+  });
+
+  test("home page loads navigator and renders an active viewport @smoke", async ({
     page,
   }) => {
     await waitForViewerReady(page);
@@ -134,11 +143,9 @@ test.describe("DICOM viewer smoke coverage", () => {
       }
     });
 
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
-    await page.getByTestId("viewport-layout-button").click();
-    await page.getByTestId("viewport-layout-option-2x2").click();
+    await setViewportLayout(page, "2x2");
 
     const viewportGrid = page.getByTestId("viewport-grid");
     const viewportSlots = page.locator('[data-testid^="viewport-slot-"]');
@@ -196,11 +203,9 @@ test.describe("DICOM viewer smoke coverage", () => {
   test("double click maximizes a viewport and restores the previous layout", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
-    await page.getByTestId("viewport-layout-button").click();
-    await page.getByTestId("viewport-layout-option-2x2").click();
+    await setViewportLayout(page, "2x2");
 
     const viewportGrid = page.getByTestId("viewport-grid");
     const secondViewportStage = page
@@ -255,8 +260,7 @@ test.describe("DICOM viewer smoke coverage", () => {
   test("image layout switches the selected viewport into a montage grid", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
     const viewportStage = page.getByTestId("viewport-stage");
     const imageLayoutCells = page.getByTestId("viewport-image-layout-cell");

@@ -1,15 +1,26 @@
 import { expect, test } from "@playwright/test";
-import { waitForViewerReady, toggleSequenceSync, clearSequenceSync, selectWindowPreset, scrollViewportFrames } from "./support/viewer-page";
+import {
+  clearSequenceSync,
+  openDesktopViewer,
+  scrollViewportFrames,
+  selectWindowPreset,
+  setViewportLayout,
+  toggleSequenceSync,
+  waitForViewerReady,
+} from "./support/viewer-page";
+import { mockDefaultViewerSettings } from "./support/viewer-settings";
 
 test.describe("DICOM viewer smoke coverage", () => {
+  test.beforeEach(async ({ page }) => {
+    await mockDefaultViewerSettings(page);
+  });
+
   test("same-study stack viewports sync by slice position", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
-    await page.getByTestId("viewport-layout-button").click();
-    await page.getByTestId("viewport-layout-option-2x1").click();
+    await setViewportLayout(page, "2x1");
 
     const firstViewportStage = page
       .getByTestId("viewport-slot-viewport-1")
@@ -78,11 +89,9 @@ test.describe("DICOM viewer smoke coverage", () => {
   test("cross-study stack viewports sync after calibration", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
-    await page.getByTestId("viewport-layout-button").click();
-    await page.getByTestId("viewport-layout-option-2x1").click();
+    await setViewportLayout(page, "2x1");
 
     const firstViewportStage = page
       .getByTestId("viewport-slot-viewport-1")
@@ -167,8 +176,7 @@ test.describe("DICOM viewer smoke coverage", () => {
   test("same-study and cross-study sync can be enabled together", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
     const viewportStage = page.getByTestId("viewport-stage");
 
@@ -194,11 +202,9 @@ test.describe("DICOM viewer smoke coverage", () => {
   test("display sync propagates zoom pan and VOI presentation", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await waitForViewerReady(page);
+    await openDesktopViewer(page);
 
-    await page.getByTestId("viewport-layout-button").click();
-    await page.getByTestId("viewport-layout-option-2x1").click();
+    await setViewportLayout(page, "2x1");
 
     const firstViewportStage = page
       .getByTestId("viewport-slot-viewport-1")

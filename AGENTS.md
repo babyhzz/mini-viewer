@@ -41,6 +41,32 @@ After every feature or bug fix, run `npm run verify`. Use `npm run test:e2e:dev`
 - Keep viewport tools registry-driven. When adding tools, actions, or groups, update `src/lib/tools/registry.ts`, `src/lib/tools/cornerstone-tool-adapter.ts`, and the relevant UI/tests together.
 - Treat viewer settings as schema-driven persisted documents. Extend defaults and normalization in `src/lib/settings/overlay.ts` before changing the stored shape.
 
+## Architecture Boundaries
+- Keep dependency direction one-way: `src/components/` may depend on `src/lib/`, `src/hooks/`, `src/stores/`, and `src/types/`, but `src/lib/`, `src/hooks/`, and `src/stores/` must not import from `src/components/`.
+- Shared domain types should live in `src/types/` or the relevant `src/lib/*` module. Do not define reusable types in component files and then import them back into the domain/store layer.
+- Keep page-level components such as `src/components/dicom-viewer-app.tsx` focused on composition. Extract synchronization rules, derived viewport state, and command construction into hooks or pure utility modules.
+- Prefer pure modules for sync, settings normalization, layout alignment, and toolbar metadata so they can be unit tested without React or DOM setup.
+- When adding new viewer behavior, ask whether it belongs to:
+  - `src/components/`: rendering and local UI composition
+  - `src/hooks/`: React composition and state wiring
+  - `src/lib/`: reusable runtime logic, pure rules, adapters, and helpers
+  - `src/types/`: shared DTOs and domain types
+
+## Code Shape Rules
+- Avoid nested ternary expressions. Use named helper functions, guard clauses, `switch`, or typed lookup tables instead.
+- If the same id-based decision appears in more than one place, consolidate it into a single typed source of truth using `Record<Union, T>`, `Set`, or `Map`.
+- Prefer deriving cheap synchronous UI state during render over introducing extra state or effects.
+- Keep JSX readable. Move branching-heavy title, label, class name, and badge/count logic into small pure helpers before it grows across the render tree.
+- Use the project `cn()` helper in `src/lib/utils/classnames.ts` for conditional class names instead of long template-string concatenation.
+- Preserve stable `data-testid` hooks when refactoring. If selectors must change, update the related Playwright coverage in the same change.
+
+## Project Skills
+- Project-local reusable skills live under `.codex/skills/` so the repo remains self-contained.
+- Prefer these skills when the task matches:
+  - `.codex/skills/medical-svg-icons/` for viewer icons and toolbar metaphors
+  - `.codex/skills/vercel-react-best-practices/` for React and Next.js performance-sensitive work
+  - `.codex/skills/js-ts-clean-code/` for readability, maintainability, and type-safe JS/TS refactors
+
 ## Toolbar Icon & Viewer Chrome Rules
 - Treat `src/components/app-icon.tsx` as the single source of truth for project-local toolbar and menu icons. Do not reintroduce external icon packages for the viewer toolbar UI.
 - When revising medical-viewer icons, follow the project skill at `.codex/skills/medical-svg-icons/` and keep metaphors aligned with mainstream viewers such as OHIF, Weasis, and RadiAnt.
@@ -65,6 +91,20 @@ Every change should pass:
 
 Add browser tests under `tests/e2e/` using `*.spec.ts`. Prefer stable selectors such as `data-testid` for viewer state, active series, and viewport readiness.
 Current smoke coverage also exercises `/api/settings`, the settings drawer, toolbar tool groups, invert behavior, measurement and ROI drawing flows, and responsive layout constraints. Preserve or extend those checks when touching those areas.
+- Use the existing suite split as a risk map:
+  - `tests/e2e/api.spec.ts` for API routes and server-side data contracts
+  - `tests/e2e/layout.spec.ts` and `tests/e2e/responsive.spec.ts` for viewport layout and resizing behavior
+  - `tests/e2e/stack-tools.spec.ts` for stack interaction, toolbar actions, annotations, key images, and DICOM tags
+  - `tests/e2e/mpr.spec.ts` for MPR layout, slab behavior, crosshair sync, and reference lines
+  - `tests/e2e/sync.spec.ts` for slice sync, cross-study calibration, and display sync
+  - `tests/e2e/settings.spec.ts` for persisted settings and shortcut behavior
+- When changing pure sync/settings/layout helpers under `src/lib/`, prefer adding or updating Vitest coverage before relying only on browser tests.
+
+## Definition Of Done
+- The change fits the dependency boundaries in this document and does not introduce new reverse imports across layers.
+- The public behavior, keyboard shortcuts, and `data-testid` coverage remain stable unless the task explicitly changes them.
+- Relevant smoke tests are preserved or updated when touching toolbar, viewport runtime, MPR, sync, settings, or responsive layout behavior.
+- `npm run verify` passes for feature and bug-fix work. For documentation-only changes, note that verification was intentionally skipped.
 
 ## Commit & Pull Request Guidelines
 Git history is not available in this workspace, so use clear, conventional commit subjects such as `feat: add series thumbnail loading` or `fix: validate dicom path traversal`.
@@ -84,6 +124,8 @@ For pull requests:
 - Keep the React 19 Ant Design compatibility patch import in `app/providers.tsx` unless the UI stack is intentionally changed.
 - Keep the split Next.js build directories in `next.config.ts` (`.next-dev` for dev and `.next` for build/start) to avoid dev/prod chunk cache collisions during hot updates.
 - Do not hand-edit or commit transient `storage/viewer-settings.sqlite*` artifacts unless the task explicitly requires a persisted fixture change.
+- Do not commit personal editor settings such as `.vscode/settings.json` unless the task explicitly requires workspace-level editor configuration.
+- If a skill becomes part of the project workflow, back it up under `.codex/skills/` instead of relying only on a user-level installation.
 
 ## DICOM Data Workflow
 When adding sample studies, prefer public, de-identified IDC data and keep the existing `dicom/<study>/<series>/*.dcm` structure.
