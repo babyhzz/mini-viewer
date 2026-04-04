@@ -54,6 +54,7 @@ import {
   type ViewportTool,
   type ViewportToolGroupSelections,
   type ViewportToolbarItemDefinition,
+  type ViewportToolbarMenu,
 } from "@/lib/tools/registry";
 import {
   getViewportWindowPresetDefinitions,
@@ -116,6 +117,72 @@ interface LayoutPreviewCell {
   tone?: "neutral" | "axial" | "coronal" | "sagittal" | "inactive";
 }
 
+interface ViewportToolbarMenuRenderState {
+  viewportMode: ViewportMode;
+  currentImageLayout: ReturnType<typeof getViewportImageLayoutDefinition>;
+  currentLayout: ReturnType<typeof getViewportLayoutDefinition>;
+  currentMprLayout: ReturnType<typeof getViewportMprLayoutDefinition>;
+  currentMprSlabMode: ReturnType<typeof getViewportMprSlabModeDefinition>;
+  cineState: ViewportCineState;
+  mprSlabState: ViewportMprSlabState;
+  sequenceSyncState: ViewportSequenceSyncState;
+  crossStudyCalibrationCount: number;
+  selectedAnnotationCount: number;
+}
+
+const TOOL_MENU_OVERLAY_CLASS_NAME =
+  "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu";
+
+const MENU_CONFIG_BY_ID: Record<
+  ViewportToolbarMenu,
+  {
+    buttonTestId: string;
+    overlayClassName?: string;
+  }
+> = {
+  windowPreset: {
+    buttonTestId: "viewport-window-preset-button",
+    overlayClassName: TOOL_MENU_OVERLAY_CLASS_NAME,
+  },
+  cine: {
+    buttonTestId: "viewport-cine-button",
+    overlayClassName: TOOL_MENU_OVERLAY_CLASS_NAME,
+  },
+  layout: {
+    buttonTestId: "viewport-layout-button",
+    overlayClassName: "viewport-toolbar-dropdown viewport-toolbar-dropdown-layout",
+  },
+  imageLayout: {
+    buttonTestId: "viewport-image-layout-button",
+    overlayClassName:
+      "viewport-toolbar-dropdown viewport-toolbar-dropdown-image-layout",
+  },
+  mprLayout: {
+    buttonTestId: "viewport-mpr-layout-button",
+    overlayClassName:
+      "viewport-toolbar-dropdown viewport-toolbar-dropdown-mpr-layout",
+  },
+  mprSlab: {
+    buttonTestId: "viewport-mpr-slab-button",
+    overlayClassName: TOOL_MENU_OVERLAY_CLASS_NAME,
+  },
+  sequenceSync: {
+    buttonTestId: "viewport-sequence-sync-button",
+    overlayClassName: TOOL_MENU_OVERLAY_CLASS_NAME,
+  },
+  annotationManage: {
+    buttonTestId: "viewport-annotation-manage-button",
+  },
+};
+
+const MPR_DISABLED_MENU_IDS = new Set<ViewportToolbarMenu>([
+  "windowPreset",
+  "cine",
+  "imageLayout",
+  "sequenceSync",
+  "annotationManage",
+]);
+
 function getToolbarItemIconName(
   item: ViewportToolbarItemDefinition,
   groupSelections: ViewportToolGroupSelections,
@@ -125,6 +192,99 @@ function getToolbarItemIconName(
   }
 
   return item.id;
+}
+
+function getViewportToolbarMenuCount(
+  menuId: ViewportToolbarMenu,
+  {
+    selectedAnnotationCount,
+    sequenceSyncState,
+    crossStudyCalibrationCount,
+  }: Pick<
+    ViewportToolbarMenuRenderState,
+    | "selectedAnnotationCount"
+    | "sequenceSyncState"
+    | "crossStudyCalibrationCount"
+  >,
+) {
+  if (menuId === "annotationManage" && selectedAnnotationCount > 0) {
+    return selectedAnnotationCount;
+  }
+
+  if (
+    menuId === "sequenceSync" &&
+    sequenceSyncState.crossStudy &&
+    crossStudyCalibrationCount > 0
+  ) {
+    return crossStudyCalibrationCount;
+  }
+
+  return null;
+}
+
+function getViewportToolbarMenuTitle(
+  menuId: ViewportToolbarMenu,
+  {
+    viewportMode,
+    currentImageLayout,
+    currentLayout,
+    currentMprLayout,
+    currentMprSlabMode,
+    cineState,
+    mprSlabState,
+    sequenceSyncState,
+    crossStudyCalibrationCount,
+  }: Omit<ViewportToolbarMenuRenderState, "selectedAnnotationCount">,
+) {
+  switch (menuId) {
+    case "windowPreset":
+      return "窗宽预设";
+    case "cine":
+      return `${
+        cineState.isPlaying ? "Cine 播放中" : "Cine 已暂停"
+      } · ${cineState.fps} FPS · ${cineState.loop ? "循环" : "单次"}`;
+    case "imageLayout":
+      return `图像布局 ${currentImageLayout.label} · ${currentImageLayout.description}`;
+    case "mprLayout":
+      return viewportMode === "mpr"
+        ? `MPR ${currentMprLayout.label} · ${currentMprLayout.description}`
+        : "MPR 已关闭";
+    case "mprSlab":
+      return viewportMode === "mpr"
+        ? `投影 ${currentMprSlabMode.label} · ${mprSlabState.thickness} mm`
+        : "仅在 MPR 视图可用";
+    case "sequenceSync":
+      return sequenceSyncState.crossStudy && crossStudyCalibrationCount > 0
+        ? `${getViewportSequenceSyncStateLabel(sequenceSyncState)} · 已校准 ${crossStudyCalibrationCount} 对`
+        : getViewportSequenceSyncStateLabel(sequenceSyncState);
+    case "layout":
+      return `布局 ${currentLayout.label} · ${currentLayout.description}`;
+    case "annotationManage":
+      return "删除图元";
+  }
+}
+
+function isViewportToolbarMenuToggled(
+  menuId: ViewportToolbarMenu,
+  {
+    cineState,
+    mprSlabState,
+    sequenceSyncState,
+  }: Pick<
+    ViewportToolbarMenuRenderState,
+    "cineState" | "mprSlabState" | "sequenceSyncState"
+  >,
+) {
+  switch (menuId) {
+    case "cine":
+      return cineState.isPlaying;
+    case "mprSlab":
+      return mprSlabState.mode !== "none";
+    case "sequenceSync":
+      return hasEnabledViewportSequenceSync(sequenceSyncState);
+    default:
+      return false;
+  }
 }
 
 function createUniformPreviewCells(rows: number, columns: number) {
@@ -276,13 +436,7 @@ function isToolbarItemModeDisabled(
   }
 
   if (item.kind === "menu") {
-    return (
-      item.id === "windowPreset" ||
-      item.id === "cine" ||
-      item.id === "imageLayout" ||
-      item.id === "sequenceSync" ||
-      item.id === "annotationManage"
-    );
+    return MPR_DISABLED_MENU_IDS.has(item.id);
   }
 
   return false;
@@ -722,6 +876,28 @@ export function ViewportToolbar({
       onAnnotationManageAction(key as "deleteSelected" | "clearAll");
     },
   };
+  const menuById: Record<ViewportToolbarMenu, MenuProps> = {
+    windowPreset: windowPresetMenu,
+    cine: cineMenu,
+    layout: layoutMenu,
+    imageLayout: imageLayoutMenu,
+    mprLayout: mprLayoutMenu,
+    mprSlab: mprSlabMenu,
+    sequenceSync: sequenceSyncMenu,
+    annotationManage: annotationManageMenu,
+  };
+  const menuRenderState: ViewportToolbarMenuRenderState = {
+    viewportMode,
+    currentImageLayout,
+    currentLayout,
+    currentMprLayout,
+    currentMprSlabMode,
+    cineState,
+    mprSlabState,
+    sequenceSyncState,
+    crossStudyCalibrationCount,
+    selectedAnnotationCount,
+  };
   const annotationListDisabled = disabled || viewportMode === "mpr";
   const historyActionsDisabled = disabled || viewportMode === "mpr";
 
@@ -811,119 +987,41 @@ export function ViewportToolbar({
             }
 
             if (item.kind === "menu") {
-              const menu =
-                item.id === "windowPreset"
-                  ? windowPresetMenu
-                  : item.id === "cine"
-                    ? cineMenu
-                  : item.id === "imageLayout"
-                      ? imageLayoutMenu
-                      : item.id === "mprLayout"
-                        ? mprLayoutMenu
-                        : item.id === "mprSlab"
-                          ? mprSlabMenu
-                        : item.id === "sequenceSync"
-                          ? sequenceSyncMenu
-                          : item.id === "layout"
-                            ? layoutMenu
-                            : annotationManageMenu;
-              const dataTestId =
-                item.id === "windowPreset"
-                  ? "viewport-window-preset-button"
-                  : item.id === "cine"
-                    ? "viewport-cine-button"
-                  : item.id === "imageLayout"
-                      ? "viewport-image-layout-button"
-                      : item.id === "mprLayout"
-                        ? "viewport-mpr-layout-button"
-                        : item.id === "mprSlab"
-                          ? "viewport-mpr-slab-button"
-                        : item.id === "sequenceSync"
-                          ? "viewport-sequence-sync-button"
-                          : item.id === "layout"
-                            ? "viewport-layout-button"
-                            : "viewport-annotation-manage-button";
-              const count =
-                item.id === "annotationManage" && selectedAnnotationCount > 0
-                  ? selectedAnnotationCount
-                  : item.id === "sequenceSync" &&
-                      sequenceSyncState.crossStudy &&
-                      crossStudyCalibrationCount > 0
-                    ? crossStudyCalibrationCount
-                    : null;
-              const title =
-                item.id === "windowPreset"
-                  ? "窗宽预设"
-                  : item.id === "cine"
-                    ? `${
-                        cineState.isPlaying ? "Cine 播放中" : "Cine 已暂停"
-                      } · ${cineState.fps} FPS · ${
-                        cineState.loop ? "循环" : "单次"
-                      }`
-                  : item.id === "imageLayout"
-                      ? `图像布局 ${currentImageLayout.label} · ${currentImageLayout.description}`
-                      : item.id === "mprLayout"
-                        ? viewportMode === "mpr"
-                          ? `MPR ${currentMprLayout.label} · ${currentMprLayout.description}`
-                          : "MPR 已关闭"
-                        : item.id === "mprSlab"
-                          ? viewportMode === "mpr"
-                            ? `投影 ${currentMprSlabMode.label} · ${mprSlabState.thickness} mm`
-                            : "仅在 MPR 视图可用"
-                        : item.id === "sequenceSync"
-                          ? sequenceSyncState.crossStudy &&
-                            crossStudyCalibrationCount > 0
-                            ? `${getViewportSequenceSyncStateLabel(sequenceSyncState)} · 已校准 ${crossStudyCalibrationCount} 对`
-                            : getViewportSequenceSyncStateLabel(
-                                sequenceSyncState,
-                              )
-                          : item.id === "layout"
-                            ? `布局 ${currentLayout.label} · ${currentLayout.description}`
-                            : "删除图元";
-              const isToggled =
-                (item.id === "cine" && cineState.isPlaying) ||
-                (item.id === "mprSlab" && mprSlabState.mode !== "none") ||
-                (item.id === "sequenceSync" &&
-                  hasEnabledViewportSequenceSync(sequenceSyncState));
+              const menu = menuById[item.id];
+              const menuConfig = MENU_CONFIG_BY_ID[item.id];
+              const count = getViewportToolbarMenuCount(
+                item.id,
+                menuRenderState,
+              );
+              const title = getViewportToolbarMenuTitle(
+                item.id,
+                menuRenderState,
+              );
+              const isToggled = isViewportToolbarMenuToggled(
+                item.id,
+                menuRenderState,
+              );
+              const controlledMenuProps =
+                item.id === "sequenceSync"
+                  ? {
+                      open: sequenceSyncMenuOpen,
+                      onOpenChange: setSequenceSyncMenuOpen,
+                    }
+                  : {};
 
               return (
                 <Dropdown
                   key={item.id}
                   menu={menu}
                   trigger={["click"]}
-                  open={
-                    item.id === "sequenceSync"
-                      ? sequenceSyncMenuOpen
-                      : undefined
-                  }
-                  onOpenChange={
-                    item.id === "sequenceSync"
-                      ? setSequenceSyncMenuOpen
-                      : undefined
-                  }
-                  overlayClassName={
-                    item.id === "windowPreset"
-                      ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
-                      : item.id === "cine"
-                        ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
-                      : item.id === "imageLayout"
-                      ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-image-layout"
-                      : item.id === "mprLayout"
-                            ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-mpr-layout"
-                            : item.id === "mprSlab"
-                              ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
-                            : item.id === "sequenceSync"
-                              ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-tool-menu"
-                              : item.id === "layout"
-                                ? "viewport-toolbar-dropdown viewport-toolbar-dropdown-layout"
-                                : undefined
-                  }
+                  overlayClassName={menuConfig.overlayClassName}
                   disabled={itemDisabled}
+                  {...controlledMenuProps}
                 >
                   <button
                     type="button"
                     className={`viewport-tool-button has-menu${isToggled ? " is-toggled" : ""}`}
-                    data-testid={dataTestId}
+                    data-testid={menuConfig.buttonTestId}
                     data-tool-id={item.id}
                     data-tool-kind={item.kind}
                     data-sequence-sync-state={

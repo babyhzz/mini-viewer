@@ -125,20 +125,21 @@ export function useSelectedViewportContext({
       calibration.leftViewportId === selectedViewportId ||
       calibration.rightViewportId === selectedViewportId,
   ).length;
-  const referenceLineSourceViewportId =
+  const hasReferenceLineSource =
     referenceLinesEnabled &&
     ((selectedViewportMode === "stack" &&
       activeViewportImageLayoutId === DEFAULT_VIEWPORT_IMAGE_LAYOUT_ID) ||
-    selectedViewportMode === "mpr")
-      ? selectedViewportId
-      : null;
+      selectedViewportMode === "mpr");
+  const referenceLineStateByViewportId =
+    selectedViewportMode === "mpr"
+      ? mprViewportReferenceLineStateById
+      : stackViewportReferenceLineStateById;
+  const referenceLineSourceViewportId = hasReferenceLineSource
+    ? selectedViewportId
+    : null;
   const referenceLineSourceState =
     referenceLineSourceViewportId != null
-      ? (selectedViewportMode === "mpr"
-          ? (mprViewportReferenceLineStateById[referenceLineSourceViewportId] ??
-            null)
-          : (stackViewportReferenceLineStateById[referenceLineSourceViewportId] ??
-            null))
+      ? (referenceLineStateByViewportId[referenceLineSourceViewportId] ?? null)
       : null;
   const activeViewportKeyImageEntries = useMemo(
     () =>

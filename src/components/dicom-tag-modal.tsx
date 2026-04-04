@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Alert, Empty, Input, Modal, Spin, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import type { ReactNode } from "react";
 
 import type { DicomImageNode, DicomTagNode, DicomTagResponse } from "@/types/dicom";
 
@@ -160,6 +161,26 @@ function renderDicomTagExpandIcon({
   );
 }
 
+function getDicomTagEmptyDescription(normalizedSearchValue: string) {
+  if (normalizedSearchValue) {
+    return "没有匹配到对应的 Tag";
+  }
+
+  return "当前图像没有可显示的 Tag";
+}
+
+function getDicomTagRowClassName(row: DicomTagTableRow) {
+  if (row.nodeType === "item") {
+    return "dicom-tag-row is-item";
+  }
+
+  if (row.vr === "SQ") {
+    return "dicom-tag-row is-sequence";
+  }
+
+  return "dicom-tag-row";
+}
+
 export function DicomTagModal({
   open,
   title,
@@ -296,6 +317,59 @@ export function DicomTagModal({
       normalizedSearchValue ? collectExpandedRowKeys(filteredRows) : expandedRowKeys,
     [expandedRowKeys, filteredRows, normalizedSearchValue],
   );
+  let content: ReactNode;
+
+  if (loading) {
+    content = (
+      <div className="dicom-tag-loading">
+        <Spin size="large" />
+      </div>
+    );
+  } else if (activeSource?.image) {
+    content = (
+      <Table<DicomTagTableRow>
+        size="small"
+        pagination={false}
+        columns={DICOM_TAG_COLUMNS}
+        dataSource={filteredRows}
+        rowKey="id"
+        className="dicom-tag-table"
+        data-testid="dicom-tag-table"
+        childrenColumnName="children"
+        expandable={{
+          expandedRowKeys: searchExpandedRowKeys,
+          rowExpandable: (row) =>
+            Boolean(row.children?.length) &&
+            (row.vr === "SQ" || row.nodeType === "item"),
+          expandIcon: renderDicomTagExpandIcon,
+          onExpandedRowsChange: (nextExpandedRowKeys) => {
+            setExpandedRowKeys(nextExpandedRowKeys as string[]);
+          },
+        }}
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={getDicomTagEmptyDescription(normalizedSearchValue)}
+            />
+          ),
+        }}
+        rowClassName={getDicomTagRowClassName}
+        scroll={{
+          y: 560,
+        }}
+      />
+    );
+  } else {
+    content = (
+      <div className="dicom-tag-empty">
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="当前视口没有可读取的 DICOM 图像"
+        />
+      </div>
+    );
+  }
 
   return (
     <Modal
@@ -330,61 +404,7 @@ export function DicomTagModal({
           />
         ) : null}
 
-        {loading ? (
-          <div className="dicom-tag-loading">
-            <Spin size="large" />
-          </div>
-        ) : activeSource?.image ? (
-          <Table<DicomTagTableRow>
-            size="small"
-            pagination={false}
-            columns={DICOM_TAG_COLUMNS}
-            dataSource={filteredRows}
-            rowKey="id"
-            className="dicom-tag-table"
-            data-testid="dicom-tag-table"
-            childrenColumnName="children"
-            expandable={{
-              expandedRowKeys: searchExpandedRowKeys,
-              rowExpandable: (row) =>
-                Boolean(row.children?.length) &&
-                (row.vr === "SQ" || row.nodeType === "item"),
-              expandIcon: renderDicomTagExpandIcon,
-              onExpandedRowsChange: (nextExpandedRowKeys) => {
-                setExpandedRowKeys(nextExpandedRowKeys as string[]);
-              },
-            }}
-            locale={{
-              emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={
-                    normalizedSearchValue
-                      ? "没有匹配到对应的 Tag"
-                      : "当前图像没有可显示的 Tag"
-                  }
-                />
-              ),
-            }}
-            rowClassName={(row) =>
-              row.nodeType === "item"
-                ? "dicom-tag-row is-item"
-                : row.vr === "SQ"
-                  ? "dicom-tag-row is-sequence"
-                  : "dicom-tag-row"
-            }
-            scroll={{
-              y: 560,
-            }}
-          />
-        ) : (
-          <div className="dicom-tag-empty">
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="当前视口没有可读取的 DICOM 图像"
-            />
-          </div>
-        )}
+        {content}
       </div>
     </Modal>
   );

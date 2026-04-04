@@ -399,14 +399,15 @@ export function applyActiveMprViewportTool(
     });
   }
 
-  const nextActiveToolName =
-    activeTool === "pan"
-      ? tools.PanTool.toolName
-      : activeTool === "zoom"
-        ? tools.ZoomTool.toolName
-        : activeTool === "windowLevel"
-          ? tools.WindowLevelTool.toolName
-          : MPR_CROSSHAIRS_TOOL_NAME;
+  let nextActiveToolName = MPR_CROSSHAIRS_TOOL_NAME;
+
+  if (activeTool === "pan") {
+    nextActiveToolName = tools.PanTool.toolName;
+  } else if (activeTool === "zoom") {
+    nextActiveToolName = tools.ZoomTool.toolName;
+  } else if (activeTool === "windowLevel") {
+    nextActiveToolName = tools.WindowLevelTool.toolName;
+  }
 
   toolGroup.setToolActive(nextActiveToolName, {
     bindings: [

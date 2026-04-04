@@ -702,6 +702,18 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function getFiniteDimensionValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function resolveCanvasSourceDimension(primary: unknown, fallback: unknown) {
+  return (
+    getFiniteDimensionValue(primary) ??
+    getFiniteDimensionValue(fallback) ??
+    512
+  );
+}
+
 function getCanvasSourceDimensions(
   image:
     | {
@@ -713,18 +725,8 @@ function getCanvasSourceDimensions(
     | null
     | undefined,
 ): CanvasSourceDimensions {
-  const width =
-    typeof image?.width === "number" && Number.isFinite(image.width)
-      ? image.width
-      : typeof image?.columns === "number" && Number.isFinite(image.columns)
-        ? image.columns
-        : 512;
-  const height =
-    typeof image?.height === "number" && Number.isFinite(image.height)
-      ? image.height
-      : typeof image?.rows === "number" && Number.isFinite(image.rows)
-        ? image.rows
-        : 512;
+  const width = resolveCanvasSourceDimension(image?.width, image?.columns);
+  const height = resolveCanvasSourceDimension(image?.height, image?.rows);
 
   return {
     width: Math.max(1, Math.round(width)),
