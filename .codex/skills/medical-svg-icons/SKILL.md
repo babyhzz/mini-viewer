@@ -11,21 +11,21 @@ Use this skill when icon quality depends on consistency more than novelty. Goal:
 
 Do not redesign medical viewer icons from memory alone. Before drawing or revising:
 
-1. Inspect the local bundled references in [references/local-asset-library.md](references/local-asset-library.md).
-2. Check nearby repo icons so new work matches the existing family when that family is already coherent.
+1. Check nearby repo icons so new work matches the existing family when that family is already coherent.
+2. Read [references/market-benchmarks.md](references/market-benchmarks.md) and [references/local-asset-library.md](references/local-asset-library.md) for the benchmark workflow and current asset status.
 3. If browsing is available and more context is needed, benchmark mainstream viewers from official docs, screenshots, or repositories.
 
 Preferred benchmark set: `OHIF`, `Weasis`, `RadiAnt`, and `3D Slicer` when MPR, crosshair, or pane orchestration is involved.
 
 If browsing is not available, read [references/market-benchmarks.md](references/market-benchmarks.md).
 
-## Local Reference Assets
+## Bundled Assets
 
-This skill includes reusable SVG benchmark snapshots under `assets/`: `assets/Weasis/` for denser workstation-style references, `assets/ohif/` for cleaner web-viewer semantics, and `assets/icon-template-24.svg` as a starter shell.
+This skill should not assume a local vendor SVG library is present. If benchmark SVGs were removed from `assets/`, treat that as intentional and continue.
 
-Treat these files as first-choice reference material for metaphor selection, silhouette strength, occupied area, stroke/fill balance, and two-tone plane placement.
-
-Do not cargo-cult source dimensions, hardcoded colors, or incidental styling. Adapt the idea into the target repo's icon system.
+- use [assets/icon-template-24.svg](assets/icon-template-24.svg) as the only guaranteed starter asset
+- use bundled references only as benchmark notes, not as geometry to paste directly into product icons
+- redraw the icon in the target repo's system even when the metaphor comes from OHIF, Weasis, RadiAnt, or 3D Slicer
 
 ## Default System
 
@@ -64,15 +64,13 @@ For `/Users/hucheng/my/github/mini-viewer`, apply these repo-specific defaults u
 
 ## Workflow
 
-1. Inspect `assets/Weasis/` and `assets/ohif/` first for the closest existing concept.
-2. Inspect nearby repo icons before drawing so the new work fits local chrome.
-3. Write the intended meaning in plain language: what should an operator understand in under one second?
-4. Reduce the concept to 1 primary metaphor plus at most 1 supporting cue.
-5. Draw the strongest recognizable silhouette first, then add only the detail needed to disambiguate it.
+1. Inspect nearby repo icons and benchmark notes before drawing so the new work fits local chrome.
+2. Write the intended meaning in plain language: what should an operator understand in under one second?
+3. Reduce the concept to 1 primary metaphor plus at most 1 supporting cue.
+4. Draw the strongest recognizable silhouette first, then add only the detail needed to disambiguate it.
+5. Redraw the geometry in the repo's icon system instead of pasting vendor SVG paths directly.
 6. Normalize proportions, occupied area, and accent usage against peers before delivering.
-7. Return the SVG plus a short note covering metaphor, color logic, and assumptions.
-
-When a matching local reference exists, prefer adapting its structure over inventing a fresh metaphor.
+7. Return the SVG plus a short note covering benchmark influences, metaphor, color logic, and assumptions.
 
 ## Style Direction
 
@@ -110,9 +108,10 @@ Do not fix smallness by making the icon visually noisy.
 
 Borrowing established medical-viewer icon ideas is preferred over inventing new metaphors.
 
-- Favor adaptation over originality.
+- Favor benchmarked ideas over novelty, but redraw the geometry yourself.
 - Stay close to mainstream viewer metaphors when they are already clear and professional.
-- It is acceptable to echo the structure of bundled OHIF or Weasis references when that produces a more credible result.
+- It is acceptable to echo proportions, silhouette strategy, or pane logic from OHIF, Weasis, RadiAnt, or 3D Slicer.
+- Do not paste vendor SVGs directly into the product icon set unless the user explicitly asks for that.
 - Do not drift toward generic SaaS iconography when the function is radiology-specific.
 
 ## Medical Viewer Heuristics
@@ -182,7 +181,7 @@ Before finalizing, verify:
 
 ## References
 
-- For bundled SVG benchmark usage, read [references/local-asset-library.md](references/local-asset-library.md).
+- For current bundled asset status and benchmark workflow, read [references/local-asset-library.md](references/local-asset-library.md).
 - For the concrete icon spec and dos/don'ts, read [references/system-spec.md](references/system-spec.md).
 - For benchmark synthesis without browsing, read [references/market-benchmarks.md](references/market-benchmarks.md).
 - For reusable prompting language, read [references/prompt-template.md](references/prompt-template.md).

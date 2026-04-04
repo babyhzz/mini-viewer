@@ -7,6 +7,7 @@ Generate [N] SVG icons for a medical imaging / DICOM viewer.
 
 Requirements:
 - first benchmark at least 3 mainstream medical imaging viewers from official sources
+- redraw fresh geometry in the target icon system instead of pasting vendor SVGs directly
 - unified style across the full set
 - 24x24 viewBox
 - serious clinical workstation feel
@@ -37,5 +38,5 @@ Output:
 For this repo, you can tighten it further:
 
 ```text
-Benchmark OHIF, Weasis, and RadiAnt first. Match a serious medical workstation icon family in a Next.js DICOM viewer. Prefer stronger, more literal radiology-tool metaphors over generic app icons, and do not let icons feel optically small.
+Benchmark OHIF, Weasis, and RadiAnt first. Match a serious medical workstation icon family in a Next.js DICOM viewer. Prefer stronger, more literal radiology-tool metaphors over generic app icons, redraw the geometry yourself, and do not let icons feel optically small.
 ```

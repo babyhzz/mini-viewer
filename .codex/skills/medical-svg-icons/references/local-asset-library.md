@@ -1,59 +1,25 @@
 # Local Asset Library
 
-Use this file before drawing new medical-viewer icons. It explains how to use the bundled SVG references under `assets/`.
+This file records the current bundled-asset situation for `medical-svg-icons`.
 
-## Directories
+## Current State
 
-- `assets/Weasis/`: strong workstation-style references with heavier visual mass and explicit tool metaphors
-- `assets/ohif/`: cleaner web-viewer references with consistent modern toolbar semantics
+- the only bundled SVG asset that should be assumed to exist is `assets/icon-template-24.svg`
+- vendor benchmark SVG libraries such as `assets/Weasis/` or `assets/ohif/` may be absent
+- missing benchmark SVGs are not an error and should not block icon work
 
-## How To Use Them
+## Default Policy
 
-Use the bundled SVGs as benchmark snapshots for:
+When benchmark SVGs are unavailable:
 
-- semantic metaphor
-- occupied area and silhouette strength
-- relative stroke/fill balance
-- pane framing and layout structure
-- restrained two-tone placement
+- use [references/market-benchmarks.md](market-benchmarks.md) for the benchmark summary
+- use official screenshots, docs, or repositories when browsing is available
+- redraw fresh geometry in the destination icon system instead of reconstructing or restoring deleted vendor assets
 
-Do not copy source dimensions, colors, or incidental styling blindly. Normalize them to the destination icon system.
+## If Vendor Assets Return Later
 
-## When To Prefer Which Set
+Treat them as benchmark material only:
 
-Prefer `Weasis` when:
-
-- an icon feels too airy or too small
-- a tool needs stronger pane or viewport structure
-- the command is operational and should feel dense or instrument-like
-
-Prefer `ohif` when:
-
-- the icon belongs to a web-style toolbar or panel
-- you need cleaner geometric simplification
-- the command already has a strong modern viewer metaphor
-
-Use both when:
-
-- you want OHIF's clarity but Weasis's visual mass
-- the repo needs a hybrid family that reads well in dense dark chrome
-
-## Fast Lookup Hints
-
-Start by searching nearby filenames for the concept you need:
-
-- selection and navigation: `selection`, `pan`, `crosshair`, `zoom`, `mouse*`
-- measurements and ROI: `measure`, `drawLine`, `drawAngle`, `drawEllipse`, `drawRectangle`, `drawPolyline`, `drawPolygon`
-- viewport and layout: `layout`, `tile`, `orthographic`, `mpr-*`, `IconMPR`, `ViewportViews`
-- display and rendering: `winLevel`, `lut`, `inverseLut`, `rotation`, `flip`, `reset`, `zoomBestFit`
-- annotations and metadata: `drawText`, `metadata`, `DicomTagBrowser`, `keyImage`, `editKeyImage`
-- sync and orchestration: `synch`, `synchLarge`, `synchStar`, `Link`, `JumpToSlice`
-
-## Repo Guidance
-
-For `/Users/hucheng/my/github/mini-viewer`, prefer:
-
-- OHIF-like metaphor clarity
-- Weasis-like occupied area and legibility
-- muted dark-clinical accents instead of bright product colors
-- literal tool semantics over consumer-app abstraction
+- borrow metaphor, silhouette logic, and visual mass
+- do not paste vendor paths directly into the product icon set by default
+- normalize everything to the repo's own stroke, spacing, scale, and accent system
