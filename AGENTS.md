@@ -64,6 +64,7 @@ After every feature or bug fix, run `npm run verify`. Use `npm run test:e2e:dev`
 - Project-local reusable skills live under `.codex/skills/` so the repo remains self-contained.
 - Prefer these skills when the task matches:
   - `.codex/skills/medical-svg-icons/` for viewer icons and toolbar metaphors
+  - `.codex/skills/cli-anything-inkscape-icons/` for command-driven SVG icon generation with `cli-anything-inkscape`
   - `.codex/skills/vercel-react-best-practices/` for React and Next.js performance-sensitive work
   - `.codex/skills/js-ts-clean-code/` for readability, maintainability, and type-safe JS/TS refactors
 
