@@ -7,13 +7,15 @@ description: Use when creating or revising SVG icons with cli-anything-inkscape.
 
 Use this skill when the task is to create, revise, or iterate on SVG icons with `cli-anything-inkscape`.
 
+This skill is about production workflow, not art direction. It defines how to generate editable SVG assets reproducibly with `cli-anything-inkscape`; it does not define the visual language of a medical viewer icon set.
+
 For `/Users/hucheng/my/github/mini-viewer`, this skill is especially useful for repo-local icon work where we want:
 
 - editable SVG output
 - a saved `.inkscape-cli.json` project alongside the SVG
 - command-driven generation that can be replayed
 
-If the icon is for the viewer toolbar, menus, or medical-imaging UI, also load [../medical-svg-icons/SKILL.md](../medical-svg-icons/SKILL.md) first and follow its visual rules.
+If the icon is for the viewer toolbar, menus, or medical-imaging UI, load [../medical-svg-icons/SKILL.md](../medical-svg-icons/SKILL.md) and treat that skill as the source of truth for metaphor, benchmark, proportions, and style. Use this skill only for the command-driven execution path.
 
 ## Default Output
 
@@ -23,7 +25,7 @@ Unless the user specifies otherwise:
 - use `px` units
 - use a transparent background
 - export both `.inkscape-cli.json` and `.svg`
-- prefer path-first geometry with a small number of strong shapes
+- prefer path-first geometry that stays easy to replay and edit
 
 ## Critical Persistence Rule
 
@@ -43,12 +45,12 @@ Preferred approaches:
 
 ## Workflow
 
-1. Translate the icon request into one primary metaphor and at most one supporting cue.
-2. Pick primitives:
+1. If the task is medical-viewer icon work, load `medical-svg-icons` first for the visual spec.
+2. Translate the chosen geometry into CLI primitives:
    - `shape add-path` for most production icons
    - `shape add-line` for straight guides or crosshairs
    - `shape add-rect` or `shape add-circle` for literal panels, frames, and badges
-   - `gradient add-*` only when the visual system truly needs it
+   - `gradient add-*` only when the upstream visual spec truly needs it
 3. Build the command sequence in drawing order.
 4. Run the wrapper script:
 
@@ -61,8 +63,9 @@ python3 .codex/skills/cli-anything-inkscape-icons/scripts/create_svg_icon.py \
   --cmd 'shape add-path --d "M 16 7 V 25" -s "fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"'
 ```
 
-5. Inspect the generated SVG and iterate by editing the command list, not by hand-waving geometry.
-6. If the icon belongs to an existing family, normalize stroke width, margins, and optical size against nearby icons before finalizing.
+5. Inspect the generated SVG and iterate by editing the command list, not by relying on one-off manual fixes.
+6. Save the project JSON so the geometry stays reproducible.
+7. If visual normalization is needed, hand off to the relevant visual skill or local icon system rather than inventing style rules here.
 
 ## Practical Rules
 
@@ -74,12 +77,12 @@ python3 .codex/skills/cli-anything-inkscape-icons/scripts/create_svg_icon.py \
 
 ## When To Escalate
 
-Pause and inspect references before drawing if:
+Load another skill or inspect references first if:
 
 - the icon is part of a medical viewer tool family
 - the metaphor is ambiguous
 - multiple icons need to look like one set
-- the request implies boolean path ops or advanced text handling
+- the request implies boolean path ops, advanced text handling, or broader visual-system decisions
 
 ## References
 

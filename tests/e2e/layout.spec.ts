@@ -128,6 +128,46 @@ test.describe("DICOM viewer smoke coverage", () => {
     }
   });
 
+  test("toolbar and dropdown icons share one rendered size system @smoke", async ({
+    page,
+  }) => {
+    await waitForViewerReady(page);
+
+    await page.getByTestId("viewport-window-preset-button").click();
+    await expect(
+      page.getByTestId("viewport-window-preset-option-default"),
+    ).toBeVisible();
+
+    const sizeMetrics = await page.evaluate(() => {
+      const getMetrics = (selector: string) => {
+        const element = document.querySelector(selector);
+
+        if (!(element instanceof HTMLElement)) {
+          throw new Error(`Missing element for selector: ${selector}`);
+        }
+
+        const style = window.getComputedStyle(element);
+
+        return {
+          width: style.width,
+          height: style.height,
+          fontSize: style.fontSize,
+        };
+      };
+
+      return {
+        toolbar: getMetrics(
+          '[data-testid="viewport-tool-select"] .viewport-toolbar-icon',
+        ),
+        dropdown: getMetrics(
+          ".viewport-toolbar-dropdown-tool-menu .viewport-tool-menu-option-icon",
+        ),
+      };
+    });
+
+    expect(sizeMetrics.dropdown).toEqual(sizeMetrics.toolbar);
+  });
+
   test("layout switch expands to multiple auto-filled viewports", async ({
     page,
   }) => {

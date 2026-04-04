@@ -5,28 +5,27 @@ description: Use when creating or revising SVG icons for medical imaging, DICOM 
 
 # Medical SVG Icons
 
-Use this skill when icon quality depends on consistency more than novelty.
+Use this skill when icon quality depends on consistency more than novelty. Goal: produce medical-imaging SVG icons that read immediately, feel like one family, and stay credible inside a dense clinical workstation UI.
 
-Goal: generate medical-imaging SVG icons that look like one family, feel serious and professional, render crisply in dense workstation UI, and communicate function immediately instead of relying on generic app metaphors.
+## Benchmark Order
 
-## Benchmark First
+Do not redesign medical viewer icons from memory alone. Before drawing or revising:
 
-When browsing is available, do not redesign icons from memory alone.
+1. Inspect the local bundled references in [references/local-asset-library.md](references/local-asset-library.md).
+2. Check nearby repo icons so new work matches the existing family when that family is already coherent.
+3. If browsing is available and more context is needed, benchmark mainstream viewers from official docs, screenshots, or repositories.
 
-Before drawing or revising a set:
+Preferred benchmark set: `OHIF`, `Weasis`, `RadiAnt`, and `3D Slicer` when MPR, crosshair, or pane orchestration is involved.
 
-1. Benchmark at least 3 mainstream medical imaging viewers from official docs, official screenshots, or official repositories.
-2. Write down what those products do well in terms of icon size, silhouette strength, literalness, and toolbar readability.
-3. Borrow proven metaphors and proportions from that benchmark instead of inventing novelty.
+If browsing is not available, read [references/market-benchmarks.md](references/market-benchmarks.md).
 
-Preferred benchmark set for this repo:
+## Local Reference Assets
 
-- OHIF
-- Weasis
-- RadiAnt
-- 3D Slicer if multi-pane or crosshair behavior is relevant
+This skill includes reusable SVG benchmark snapshots under `assets/`: `assets/Weasis/` for denser workstation-style references, `assets/ohif/` for cleaner web-viewer semantics, and `assets/icon-template-24.svg` as a starter shell.
 
-If browsing is not available, read [references/market-benchmarks.md](references/market-benchmarks.md) before drawing.
+Treat these files as first-choice reference material for metaphor selection, silhouette strength, occupied area, stroke/fill balance, and two-tone plane placement.
+
+Do not cargo-cult source dimensions, hardcoded colors, or incidental styling. Adapt the idea into the target repo's icon system.
 
 ## Default System
 
@@ -42,14 +41,9 @@ Unless the user explicitly asks otherwise:
 - use `stroke-linecap="round"` and `stroke-linejoin="round"`
 - keep all meaningful strokes inside an optical safe area of roughly `1.5..22.5`
 - align endpoints and major bends to whole or half-pixels for crisp rendering
-- keep visual weight balanced across the set; avoid one icon feeling noticeably weaker or smaller than its neighbors
+- keep visual weight balanced across the set
 
-Default color behavior:
-
-- mono is allowed, but do not default to mono if two-tone improves meaning
-- for two-tone icons, keep one dominant ink color plus one restrained accent layer
-- the accent layer should separate semantic planes, not decorate
-- avoid bright consumer-app colors; prefer restrained clinical palettes
+Default color behavior: mono is allowed, but do not default to mono if two-tone improves meaning. Keep one dominant ink color plus one restrained accent layer; the accent should separate semantic planes, not decorate. Avoid bright consumer-app colors.
 
 If the project already uses a different grid or visual language, match the existing system instead of forcing this one.
 
@@ -70,13 +64,15 @@ For `/Users/hucheng/my/github/mini-viewer`, apply these repo-specific defaults u
 
 ## Workflow
 
-1. Inspect nearby icons before drawing. Reuse the local style if it is already coherent.
-2. Write the function in plain language first: what should a clinician or operator understand in under one second?
-3. Reduce the concept to 1 primary metaphor plus at most 1 supporting cue.
-4. Draw the strongest recognizable silhouette first, then add only the detail needed to disambiguate it.
-5. Enlarge the visual mass until the icon no longer feels timid beside peers.
-6. Normalize proportions against peer icons before delivering.
-7. Return both the SVG and a short note explaining the metaphor, color logic, and any assumptions.
+1. Inspect `assets/Weasis/` and `assets/ohif/` first for the closest existing concept.
+2. Inspect nearby repo icons before drawing so the new work fits local chrome.
+3. Write the intended meaning in plain language: what should an operator understand in under one second?
+4. Reduce the concept to 1 primary metaphor plus at most 1 supporting cue.
+5. Draw the strongest recognizable silhouette first, then add only the detail needed to disambiguate it.
+6. Normalize proportions, occupied area, and accent usage against peers before delivering.
+7. Return the SVG plus a short note covering metaphor, color logic, and assumptions.
+
+When a matching local reference exists, prefer adapting its structure over inventing a fresh metaphor.
 
 ## Style Direction
 
@@ -100,7 +96,7 @@ Avoid:
 
 ## Size And Readability Rules
 
-If an icon feels too small, the first fixes should usually be:
+If an icon feels too small, first:
 
 - enlarge the main silhouette
 - reduce unused outer margin
@@ -112,11 +108,11 @@ Do not fix smallness by making the icon visually noisy.
 
 ## Borrowing Policy
 
-For this skill, borrowing established medical-viewer icon ideas is preferred over inventing new metaphors.
+Borrowing established medical-viewer icon ideas is preferred over inventing new metaphors.
 
 - Favor adaptation over originality.
 - Stay close to mainstream viewer metaphors when they are already clear and professional.
-- It is acceptable to echo the structure of established viewer icons if that produces a more credible result.
+- It is acceptable to echo the structure of bundled OHIF or Weasis references when that produces a more credible result.
 - Do not drift toward generic SaaS iconography when the function is radiology-specific.
 
 ## Medical Viewer Heuristics
@@ -143,7 +139,7 @@ Avoid:
 
 ## Output Contract
 
-When generating mono icons, prefer this structure:
+For mono icons, prefer:
 
 ```svg
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -151,7 +147,7 @@ When generating mono icons, prefer this structure:
 </svg>
 ```
 
-When generating two-tone icons, prefer this structure:
+For two-tone icons, prefer:
 
 ```svg
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -165,7 +161,7 @@ Two-tone guidance:
 - use the accent plane sparingly
 - keep contrast readable in dark clinical UI
 - the icon must still work if accent collapses to grayscale
-- prefer structural accent areas such as a pane, mask, slice plane, or highlight target
+- prefer structural accent areas such as a pane, mask, slice plane, or focus target
 
 If React/TSX is needed, convert the SVG cleanly without changing geometry.
 
@@ -180,14 +176,14 @@ Before finalizing, verify:
 - similar visual margin on all sides
 - center of mass feels aligned with adjacent icons
 - icon still reads at `18px`
-- the icon does not feel optically undersized next to neighbors
 - the metaphor is recognizable without reading the tooltip
 - if two-tone is used, the accent improves meaning rather than merely styling
 - dropdown menu icons and toolbar icons feel like the same set, not two different scales
 
 ## References
 
+- For bundled SVG benchmark usage, read [references/local-asset-library.md](references/local-asset-library.md).
 - For the concrete icon spec and dos/don'ts, read [references/system-spec.md](references/system-spec.md).
-- For current benchmarked viewer references, read [references/market-benchmarks.md](references/market-benchmarks.md).
+- For benchmark synthesis without browsing, read [references/market-benchmarks.md](references/market-benchmarks.md).
 - For reusable prompting language, read [references/prompt-template.md](references/prompt-template.md).
 - For a starter SVG shell, reuse [assets/icon-template-24.svg](assets/icon-template-24.svg).

@@ -131,16 +131,6 @@ function AccentCircle(props: SVGProps<SVGCircleElement>) {
   );
 }
 
-function AccentEllipse(props: SVGProps<SVGEllipseElement>) {
-  return (
-    <ellipse
-      fill="var(--app-icon-accent, currentColor)"
-      opacity={0.32}
-      {...props}
-    />
-  );
-}
-
 function SolidCircle(props: SVGProps<SVGCircleElement>) {
   return <circle fill="currentColor" {...props} />;
 }
@@ -148,89 +138,98 @@ function SolidCircle(props: SVGProps<SVGCircleElement>) {
 const icons: Record<AppIconName, ReactNode> = {
   select: (
     <>
+      <StrokePath d="M5.35 7.4V5.35H7.4" />
+      <StrokePath d="M16.6 5.35H18.65V7.4" />
+      <StrokePath d="M18.65 16.6V18.65H16.6" />
+      <StrokePath d="M7.4 18.65H5.35V16.6" />
       <path
-        d="M5 4.75L13.78 13.2L10.38 13.98L12.38 19.1L10.42 19.92L8.42 14.79L5.82 17.02L5 4.75Z"
+        d="M7.1 5.1L14.52 12.26L11.56 12.98L13.48 17.72L11.45 18.54L9.54 13.8L7.32 15.97L7.1 5.1Z"
         fill="currentColor"
       />
-      <StrokePath d="M15.2 5.2H19V9" strokeWidth={1.7 / ICON_SCALE} />
     </>
   ),
   pan: (
     <>
-      <AccentRect x="9.25" y="9.25" width="5.5" height="5.5" rx="1" />
-      <StrokePath d="M12 4.75V19.25" strokeWidth={1.7 / ICON_SCALE} />
-      <StrokePath d="M4.75 12H19.25" strokeWidth={1.7 / ICON_SCALE} />
-      <StrokePath d="M12 4.75L9.7 7.05" strokeWidth={1.7 / ICON_SCALE} />
-      <StrokePath d="M12 4.75L14.3 7.05" strokeWidth={1.7 / ICON_SCALE} />
-      <StrokePath d="M12 19.25L9.7 16.95" strokeWidth={1.7 / ICON_SCALE} />
-      <StrokePath d="M12 19.25L14.3 16.95" strokeWidth={1.7 / ICON_SCALE} />
-      <StrokePath d="M4.75 12L7.05 9.7" strokeWidth={1.7 / ICON_SCALE} />
-      <StrokePath d="M4.75 12L7.05 14.3" strokeWidth={1.7 / ICON_SCALE} />
-      <StrokePath d="M19.25 12L16.95 9.7" strokeWidth={1.7 / ICON_SCALE} />
-      <StrokePath d="M19.25 12L16.95 14.3" strokeWidth={1.7 / ICON_SCALE} />
+      <AccentRect x="9.35" y="9.35" width="5.3" height="5.3" rx="0.95" />
+      <StrokePath d="M12 4.5V8.1" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M12 15.9V19.5" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M4.5 12H8.1" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M15.9 12H19.5" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M12 4.5L9.65 6.85" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M12 4.5L14.35 6.85" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M12 19.5L9.65 17.15" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M12 19.5L14.35 17.15" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M4.5 12L6.85 9.65" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M4.5 12L6.85 14.35" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M19.5 12L17.15 9.65" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M19.5 12L17.15 14.35" strokeWidth={1.8 / ICON_SCALE} />
     </>
   ),
   zoom: (
     <>
-      <StrokeCircle cx="10.4" cy="10.4" r="5.5" />
-      <StrokePath d="M14.35 14.35L18.8 18.8" />
-      <StrokePath d="M10.4 8.1V12.7" />
-      <StrokePath d="M8.1 10.4H12.7" />
+      <AccentCircle cx="10.35" cy="10.35" r="3.45" />
+      <StrokeCircle cx="10.35" cy="10.35" r="5.45" />
+      <StrokePath d="M14.25 14.25L18.95 18.95" strokeWidth={1.8 / ICON_SCALE} />
+      <StrokePath d="M10.35 7.95V12.75" />
+      <StrokePath d="M7.95 10.35H12.75" />
     </>
   ),
   windowLevel: (
     <>
-      <StrokeRect x="5.35" y="5" width="7.6" height="14" rx="1.2" />
-      <AccentRect x="6.1" y="6.05" width="3.1" height="11.9" rx="0.7" />
-      <StrokePath d="M9.15 5V19" />
-      <StrokePath d="M17.8 6.15V17.85" />
-      <StrokePath d="M16.45 7.75L17.8 6.15L19.15 7.75" />
-      <StrokePath d="M16.45 16.25L17.8 17.85L19.15 16.25" />
+      <AccentPath d="M12 6.15A5.85 5.85 0 0 1 12 17.85V6.15Z" />
+      <StrokeCircle cx="12" cy="12" r="5.85" />
+      <StrokePath d="M8.85 15.15L15.15 8.85" />
+      <StrokePath d="M12 3.9V6.15" />
+      <StrokePath d="M12 17.85V20.1" />
+      <StrokePath d="M3.9 12H6.15" />
+      <StrokePath d="M17.85 12H20.1" />
     </>
   ),
   windowPreset: (
     <>
-      <StrokeRect x="5.25" y="6.1" width="13.5" height="11.8" rx="1.3" />
-      <AccentRect x="7" y="7.7" width="8.7" height="2" rx="0.65" />
-      <StrokePath d="M7.8 11.8H16.2" />
-      <StrokePath d="M7.8 14.7H13.9" />
+      <StrokeRect x="5.15" y="5.55" width="13.7" height="12.9" rx="1.25" />
+      <AccentRect x="6.5" y="7" width="11" height="2.2" rx="0.65" />
+      <StrokePath d="M6.9 11.45H17.1" />
+      <StrokePath d="M6.9 14.2H14" />
+      <StrokePath d="M6.9 16.95H11.7" />
     </>
   ),
   cine: (
     <>
-      <StrokeRect x="5.2" y="6.15" width="13.6" height="11.7" rx="1.2" />
-      <StrokePath d="M8 6.15V17.85" />
-      <StrokePath d="M16 6.15V17.85" />
-      <SolidCircle cx="6.45" cy="8.95" r="0.58" />
-      <SolidCircle cx="6.45" cy="12" r="0.58" />
-      <SolidCircle cx="6.45" cy="15.05" r="0.58" />
-      <SolidCircle cx="17.55" cy="8.95" r="0.58" />
-      <SolidCircle cx="17.55" cy="12" r="0.58" />
-      <SolidCircle cx="17.55" cy="15.05" r="0.58" />
-      <path d="M10 9.2L14.55 12L10 14.8V9.2Z" fill="currentColor" />
+      <StrokeRect x="5.05" y="6.15" width="13.9" height="11.7" rx="1.2" />
+      <StrokePath d="M8.05 6.15V17.85" />
+      <StrokePath d="M15.95 6.15V17.85" />
+      <SolidCircle cx="6.35" cy="8.9" r="0.6" />
+      <SolidCircle cx="6.35" cy="12" r="0.6" />
+      <SolidCircle cx="6.35" cy="15.1" r="0.6" />
+      <SolidCircle cx="17.65" cy="8.9" r="0.6" />
+      <SolidCircle cx="17.65" cy="12" r="0.6" />
+      <SolidCircle cx="17.65" cy="15.1" r="0.6" />
+      <path d="M10 9L14.8 12L10 15V9Z" fill="currentColor" />
     </>
   ),
   fit: (
     <>
-      <StrokeRect x="8.35" y="8.35" width="7.3" height="7.3" rx="0.95" />
-      <StrokePath d="M9 5H5V9" />
-      <StrokePath d="M15 5H19V9" />
-      <StrokePath d="M19 15V19H15" />
-      <StrokePath d="M9 19H5V15" />
+      <AccentRect x="8.45" y="8.45" width="7.1" height="7.1" rx="0.9" />
+      <StrokeRect x="8.45" y="8.45" width="7.1" height="7.1" rx="0.9" />
+      <StrokePath d="M9.1 5H5V9.1" />
+      <StrokePath d="M14.9 5H19V9.1" />
+      <StrokePath d="M19 14.9V19H14.9" />
+      <StrokePath d="M9.1 19H5V14.9" />
     </>
   ),
   reset: (
     <>
-      <StrokeRect x="8.3" y="8.2" width="7.4" height="7.4" rx="1" />
-      <StrokePath d="M8.25 5.85H5V9.1" />
-      <StrokePath d="M5.1 9.1A7.2 7.2 0 1 0 12 4.8C10.68 4.8 9.43 5.16 8.25 5.85" />
+      <StrokeRect x="8.2" y="8.2" width="7.6" height="7.6" rx="1" />
+      <StrokePath d="M8.1 5.75H4.95V8.9" />
+      <StrokePath d="M5 8.85A7.1 7.1 0 1 0 12.05 4.9C10.68 4.9 9.4 5.22 8.1 5.75" />
     </>
   ),
   rotateRight: (
     <>
-      <StrokeRect x="6.8" y="7.2" width="8.7" height="8.7" rx="1" />
-      <StrokePath d="M14.35 4.9H18.8V9.35" />
-      <StrokePath d="M18.8 9.35A7.35 7.35 0 0 1 5.8 13.7" />
+      <StrokeRect x="8.1" y="8.1" width="7.8" height="7.8" rx="1" />
+      <StrokePath d="M14.15 5H18.8V9.65" />
+      <StrokePath d="M18.8 9.65A7.35 7.35 0 0 1 5.9 13.2" />
     </>
   ),
   flipHorizontal: (
@@ -257,47 +256,64 @@ const icons: Record<AppIconName, ReactNode> = {
   ),
   layout: (
     <>
-      <AccentRect x="6.15" y="6.15" width="4.95" height="4.95" rx="0.65" />
-      <StrokeRect x="5" y="5" width="14" height="14" rx="1.2" />
-      <StrokePath d="M12 5V19" />
-      <StrokePath d="M5 12H19" />
+      <StrokeRect x="4.6" y="6.05" width="14.8" height="11.9" rx="1.15" />
+      <AccentRect x="12.75" y="7.15" width="5.55" height="3.85" rx="0.6" />
+      <StrokePath d="M11.95 6.05V17.95" />
+      <StrokePath d="M11.95 12H19.4" />
     </>
   ),
   imageLayout: (
     <>
       <StrokeRect x="5" y="5" width="14" height="14" rx="1.2" />
-      <AccentRect x="6.1" y="6.1" width="5.5" height="11.8" rx="0.7" />
-      <StrokePath d="M12.2 5V19" />
-      <StrokePath d="M12.2 12H19" />
+      <AccentRect x="6.15" y="6.15" width="5.15" height="5.15" rx="0.65" />
+      <StrokePath d="M12 5V19" />
+      <StrokePath d="M5 12H19" />
     </>
   ),
   mprLayout: (
     <>
-      <AccentRect x="6.2" y="6.2" width="4.9" height="4.9" rx="0.65" />
-      <rect x="12.9" y="6.2" width="4.9" height="4.9" rx="0.65" fill="currentColor" opacity="0.12" />
-      <rect x="6.2" y="12.9" width="11.6" height="4.9" rx="0.65" fill="currentColor" opacity="0.18" />
+      <AccentRect x="6.15" y="6.15" width="5.25" height="5.25" rx="0.65" />
+      <rect
+        x="12.6"
+        y="6.15"
+        width="5.25"
+        height="5.25"
+        rx="0.65"
+        fill="currentColor"
+        opacity="0.14"
+      />
+      <rect
+        x="6.15"
+        y="12.6"
+        width="11.7"
+        height="5.25"
+        rx="0.65"
+        fill="currentColor"
+        opacity="0.22"
+      />
       <StrokeRect x="5" y="5" width="14" height="14" rx="1.2" />
-      <StrokePath d="M12 5V12" />
+      <StrokePath d="M12 5V11.4" />
       <StrokePath d="M5 12H19" />
     </>
   ),
   mprSlab: (
     <>
-      <StrokeRect x="5" y="5.35" width="14" height="13.3" rx="1.2" />
-      <AccentRect x="7.2" y="10.15" width="9.6" height="3.7" rx="0.55" />
-      <StrokePath d="M7.2 8.1H16.8" />
-      <StrokePath d="M7.2 10H16.8" />
-      <StrokePath d="M7.2 14H16.8" />
-      <StrokePath d="M7.2 15.9H16.8" />
-      <StrokePath d="M19 9.3L21 12L19 14.7" />
+      <StrokeRect x="5" y="5.45" width="14" height="13.1" rx="1.2" />
+      <AccentRect x="7" y="10.2" width="10" height="3.55" rx="0.55" />
+      <StrokePath d="M7 8.3H17" />
+      <StrokePath d="M7 10H17" />
+      <StrokePath d="M7 14H17" />
+      <StrokePath d="M7 15.7H17" />
+      <StrokePath d="M19.1 9.35L21 12L19.1 14.65" />
     </>
   ),
   sequenceSync: (
     <>
-      <StrokeRect x="4.8" y="7.1" width="4.8" height="9.8" rx="0.9" />
-      <StrokeRect x="14.4" y="7.1" width="4.8" height="9.8" rx="0.9" />
-      <StrokePath d="M10.55 13.7L9.3 12.45C8.45 11.6 8.45 10.38 9.3 9.53C10.15 8.68 11.37 8.68 12.22 9.53L13.05 10.36" />
-      <StrokePath d="M13.45 10.3L14.7 11.55C15.55 12.4 15.55 13.62 14.7 14.47C13.85 15.32 12.63 15.32 11.78 14.47L10.95 13.64" />
+      <StrokeRect x="4.85" y="7.1" width="4.9" height="9.8" rx="0.9" />
+      <AccentRect x="15.15" y="8.3" width="3.3" height="7.4" rx="0.55" />
+      <StrokeRect x="14.25" y="7.1" width="4.9" height="9.8" rx="0.9" />
+      <StrokePath d="M9.95 10.05L11.25 8.75C11.95 8.05 13.1 8.05 13.8 8.75C14.5 9.45 14.5 10.6 13.8 11.3L13 12.1" />
+      <StrokePath d="M14.05 13.95L12.75 15.25C12.05 15.95 10.9 15.95 10.2 15.25C9.5 14.55 9.5 13.4 10.2 12.7L11 11.9" />
     </>
   ),
   length: (
@@ -364,65 +380,82 @@ const icons: Record<AppIconName, ReactNode> = {
   ),
   invert: (
     <>
-      <path d="M12 4C7.58 4 4 7.58 4 12C4 16.42 7.58 20 12 20V4Z" fill="currentColor" opacity="0.2" />
-      <StrokeCircle cx="12" cy="12" r="8" />
-      <StrokePath d="M12 4V20" />
+      <AccentPath d="M12 4.6A7.4 7.4 0 0 1 12 19.4V4.6Z" />
+      <StrokeCircle cx="12" cy="12" r="7.4" />
+      <StrokePath d="M12 4.6V19.4" />
     </>
   ),
   keyImage: (
     <>
-      <StrokeRect x="5.8" y="5.3" width="12.4" height="13.4" rx="1" />
-      <StrokePath d="M9.3 5.3V13.8L12 12.15L14.7 13.8V5.3" />
-      <StrokePath d="M7.9 16H16.1" />
+      <StrokeRect x="5.6" y="5.4" width="12.8" height="13.2" rx="1.1" />
+      <path
+        d="M9.2 5.4H14.8V13.45L12 11.85L9.2 13.45V5.4Z"
+        fill="var(--app-icon-accent, currentColor)"
+        opacity="0.32"
+      />
+      <StrokePath d="M9.2 5.4V13.45L12 11.85L14.8 13.45V5.4" />
+      <StrokePath d="M8.1 16.15H15.9" />
     </>
   ),
   keyImageList: (
     <>
       <StrokeRect x="5" y="5" width="14" height="14" rx="1.2" />
-      <path d="M7.1 7.7H8.8V11.45L7.95 10.85L7.1 11.45V7.7Z" fill="currentColor" />
-      <path d="M7.1 12.95H8.8V16.7L7.95 16.1L7.1 16.7V12.95Z" fill="currentColor" opacity="0.88" />
-      <StrokePath d="M10 8.6H15.2" />
-      <StrokePath d="M10 14.05H15.2" />
+      <path
+        d="M7 7.35H9V10.9L8 10.25L7 10.9V7.35Z"
+        fill="var(--app-icon-accent, currentColor)"
+        opacity="0.32"
+      />
+      <path
+        d="M7 12.7H9V16.25L8 15.6L7 16.25V12.7Z"
+        fill="currentColor"
+        opacity="0.82"
+      />
+      <StrokePath d="M10.3 8.3H15.6" />
+      <StrokePath d="M10.3 13.65H15.6" />
     </>
   ),
   dicomTag: (
     <>
-      <StrokePath d="M6.9 5.9H14.55L18.1 9.45V18.1H6.9V5.9Z" />
-      <StrokePath d="M14.55 5.9V9.45H18.1" />
-      <StrokePath d="M9.1 11.8H15.1" />
-      <StrokePath d="M9.1 14.8H13.6" />
+      <StrokeRect x="5.1" y="5.4" width="13.8" height="13.2" rx="1.15" />
+      <SolidCircle cx="7.95" cy="8.85" r="0.9" />
+      <AccentCircle cx="7.95" cy="12" r="0.9" />
+      <SolidCircle cx="7.95" cy="15.15" r="0.9" opacity="0.84" />
+      <StrokePath d="M10.25 8.85H16.25" />
+      <StrokePath d="M10.25 12H16.25" />
+      <StrokePath d="M10.25 15.15H15" />
     </>
   ),
   annotationManage: (
     <>
-      <StrokePath d="M9 7V5.6H15V7" />
-      <StrokePath d="M6.1 7H17.9" />
-      <StrokePath d="M7.55 7.5L8.45 18.8H15.55L16.45 7.5" />
-      <StrokePath d="M10.5 10.4V15.9" />
-      <StrokePath d="M13.5 10.4V15.9" />
+      <StrokePath d="M6.15 15.55L9.4 9.2L13.1 11.5L16.15 7.8" />
+      <SolidCircle cx="6.15" cy="15.55" r="0.92" />
+      <AccentCircle cx="9.4" cy="9.2" r="1.1" />
+      <SolidCircle cx="13.1" cy="11.5" r="0.92" />
+      <StrokePath d="M15.1 14.2L18.4 17.5" />
+      <StrokePath d="M18.4 14.2L15.1 17.5" />
     </>
   ),
   annotationList: (
     <>
       <StrokeRect x="5" y="5" width="14" height="14" rx="1.2" />
-      <StrokePath d="M9.1 8.9H15.3" />
-      <StrokePath d="M9.1 12H15.3" />
-      <StrokePath d="M9.1 15.1H13.7" />
-      <SolidCircle cx="7.1" cy="8.9" r="0.82" />
-      <SolidCircle cx="7.1" cy="12" r="0.82" />
-      <SolidCircle cx="7.1" cy="15.1" r="0.82" />
+      <AccentCircle cx="7.2" cy="8.9" r="0.85" />
+      <SolidCircle cx="7.2" cy="12" r="0.85" />
+      <SolidCircle cx="7.2" cy="15.1" r="0.85" opacity="0.84" />
+      <StrokePath d="M9.3 8.9H15.5" />
+      <StrokePath d="M9.3 12H15.5" />
+      <StrokePath d="M9.3 15.1H14" />
     </>
   ),
   undo: (
     <>
-      <StrokePath d="M8.35 9.35H16.15C17.82 9.35 19.15 10.68 19.15 12.35C19.15 14.02 17.82 15.35 16.15 15.35H11.45" />
-      <StrokePath d="M9.35 6.95L4.95 10.95L9.35 14.95" />
+      <StrokePath d="M8.7 8.9H15.4C17.17 8.9 18.6 10.33 18.6 12.1C18.6 13.87 17.17 15.3 15.4 15.3H10.55" />
+      <StrokePath d="M9 6.5L5 10.1L9 13.7" />
     </>
   ),
   redo: (
     <>
-      <StrokePath d="M15.65 9.35H7.85C6.18 9.35 4.85 10.68 4.85 12.35C4.85 14.02 6.18 15.35 7.85 15.35H12.55" />
-      <StrokePath d="M14.65 6.95L19.05 10.95L14.65 14.95" />
+      <StrokePath d="M15.3 8.9H8.6C6.83 8.9 5.4 10.33 5.4 12.1C5.4 13.87 6.83 15.3 8.6 15.3H13.45" />
+      <StrokePath d="M15 6.5L19 10.1L15 13.7" />
     </>
   ),
   referenceLines: (
@@ -443,6 +476,7 @@ const icons: Record<AppIconName, ReactNode> = {
       <StrokePath d="M5 12H19" />
       <StrokePath d="M5 16H19" />
       <StrokeCircle cx="8.2" cy="8" r="1.75" />
+      <AccentCircle cx="15.7" cy="12" r="1.75" />
       <StrokeCircle cx="15.7" cy="12" r="1.75" />
       <StrokeCircle cx="10.6" cy="16" r="1.75" />
     </>
