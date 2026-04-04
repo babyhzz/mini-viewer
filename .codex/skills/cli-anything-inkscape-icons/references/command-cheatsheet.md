@@ -99,8 +99,8 @@ Do not rely on multiple separate `--project ... <mutating command>` calls.
 Use one REPL batch instead:
 
 ```text
-document new -w 24 -h 24 -bg transparent -n icon -o /tmp/icon.inkscape-cli.json
-shape add-rect --x 4 --y 4 -w 16 -h 16 -s "fill:none;stroke:#000;stroke-width:2"
+document new -w 32 -h 32 -bg transparent -n icon -o /tmp/icon.inkscape-cli.json
+shape add-rect --x 6 --y 6 -w 20 -h 20 -s "fill:none;stroke:#000;stroke-width:2"
 document save
 export svg /tmp/icon.svg --overwrite
 exit
@@ -121,8 +121,8 @@ python3 .codex/skills/cli-anything-inkscape-icons/scripts/create_svg_icon.py \
   --project .tmp/icon.inkscape-cli.json \
   --svg .tmp/icon.svg \
   --name icon \
-  --cmd 'shape add-path --d "M 5 12 H 19" -s "fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"' \
-  --cmd 'shape add-path --d "M 12 5 V 19" -s "fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"'
+  --cmd 'shape add-path --d "M 7 16 H 25" -s "fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"' \
+  --cmd 'shape add-path --d "M 16 7 V 25" -s "fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"'
 ```
 
 Optional:
@@ -139,7 +139,7 @@ python3 .codex/skills/cli-anything-inkscape-icons/scripts/create_svg_icon.py \
   --project .tmp/frame.inkscape-cli.json \
   --svg .tmp/frame.svg \
   --name frame \
-  --cmd 'shape add-rect --x 4 --y 4 -w 16 -h 16 -s "fill:none;stroke:#000;stroke-width:2"'
+  --cmd 'shape add-rect --x 6 --y 6 -w 20 -h 20 -s "fill:none;stroke:#000;stroke-width:2"'
 ```
 
 Result:

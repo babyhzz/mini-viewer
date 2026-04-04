@@ -23,8 +23,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--svg", required=True, help="Output SVG path")
     parser.add_argument("--png", help="Optional PNG preview output path")
     parser.add_argument("--name", default="icon", help="Document name")
-    parser.add_argument("--width", type=float, default=24, help="Canvas width")
-    parser.add_argument("--height", type=float, default=24, help="Canvas height")
+    parser.add_argument("--width", type=float, default=32, help="Canvas width")
+    parser.add_argument("--height", type=float, default=32, help="Canvas height")
     parser.add_argument("--units", default="px", help="Canvas units")
     parser.add_argument(
         "--background",

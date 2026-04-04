@@ -16,7 +16,7 @@ That makes the CLI suitable for deterministic icon generation workflows where we
 
 For small icons we usually need:
 
-- a fixed `24 x 24` coordinate system
+- a fixed `32 x 32` coordinate system
 - a handful of paths or simple shapes
 - explicit fill and stroke styling
 - precise transforms when reusing geometry
@@ -64,7 +64,7 @@ The bundled wrapper script automates exactly that.
 
 1. Define the icon metaphor in plain language.
 2. Reduce it to one or two SVG primitives or paths.
-3. Start a transparent `24 x 24` document.
+3. Start a transparent `32 x 32` document.
 4. Add shapes in visual stacking order.
 5. Prefer full style strings on creation for stable, replayable commands.
 6. Save the project JSON.

@@ -59,7 +59,8 @@ For `/Users/hucheng/my/github/mini-viewer`, apply these repo-specific defaults u
 
 - keep toolbar and dropdown icons in the same family and at the same rendered size
 - use the shared size variable in `app/globals.css` (`--viewer-toolbar-icon-size`) instead of sizing menu and toolbar icons separately
-- prefer a lighter stroke band than generic outline systems; this repo currently targets about `1.65` to `1.8` stroke width on the `24` grid
+- when drawing new repo-local icons, prefer a `32 x 32` source grid even if intermediate code still reuses legacy `24`-grid geometry
+- prefer a lighter stroke band than generic outline systems; this repo currently targets about `2.1` to `2.35` effective stroke width on the `32` grid
 - use dark muted accent colors for two-tone layers, such as steel blue or desaturated teal; do not fall back to gray-only accent planes unless mono is specifically requested
 - the `pan` tool should default to a four-way cross-arrow metaphor, not a hand icon
 - `select` should stay a cursor metaphor

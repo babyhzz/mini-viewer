@@ -61,13 +61,14 @@ Keep the system usable in monochrome fallbacks.
 
 The viewer toolbar in `/Users/hucheng/my/github/mini-viewer/src/components/app-icon.tsx` is now project-local. When adding or replacing icons here:
 
+- prefer a `32 x 32` source grid for new repo-local icon work
 - favor toolbar readability over decorative fidelity
 - use stronger metaphors than the current overly generic set
 - increase visual mass when an icon feels timid in the button
 - allow restrained two-tone accents where they clarify pane structure, selection, mask, or focus
 - prefer “medical workstation” tone over generic consumer tooling
 - keep toolbar and dropdown icons on the same visual scale by following `--viewer-toolbar-icon-size` in `app/globals.css`
-- keep stroke weight slightly lighter than the generic default; the current repo direction is roughly `1.65` to `1.8`
+- keep stroke weight slightly lighter than the generic default; on the repo's `32`-grid target this is roughly `2.1` to `2.35`
 - use dark muted accent colors such as steel blue / desaturated teal instead of gray-only accents or bright saturated blue
 - use a four-way cross-arrow icon for `pan`
 - keep ROI icons as pure geometry without `+` markers

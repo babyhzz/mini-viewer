@@ -19,7 +19,7 @@ If the icon is for the viewer toolbar, menus, or medical-imaging UI, also load [
 
 Unless the user specifies otherwise:
 
-- use a `24 x 24` canvas
+- use a `32 x 32` canvas
 - use `px` units
 - use a transparent background
 - export both `.inkscape-cli.json` and `.svg`
@@ -57,8 +57,8 @@ python3 .codex/skills/cli-anything-inkscape-icons/scripts/create_svg_icon.py \
   --project src/icons/tmp/example.inkscape-cli.json \
   --svg src/icons/tmp/example.svg \
   --name example \
-  --cmd 'shape add-path --d "M 5 12 H 19" -s "fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"' \
-  --cmd 'shape add-path --d "M 12 5 V 19" -s "fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"'
+  --cmd 'shape add-path --d "M 7 16 H 25" -s "fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"' \
+  --cmd 'shape add-path --d "M 16 7 V 25" -s "fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round"'
 ```
 
 5. Inspect the generated SVG and iterate by editing the command list, not by hand-waving geometry.
